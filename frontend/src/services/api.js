@@ -1,4 +1,4 @@
-const DEFAULT_BACKEND_URL = "http://localhost:8000";
+const DEFAULT_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
 
 /**
  * Health check endpoint for Python backend
