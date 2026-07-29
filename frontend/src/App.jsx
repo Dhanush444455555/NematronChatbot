@@ -23,6 +23,7 @@ export default function App() {
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [backendHealthy, setBackendHealthy] = useState(true);
 
   const abortControllerRef = useRef(null);
@@ -251,13 +252,29 @@ export default function App() {
 
   return (
     <div className="app-container">
+      <div 
+        className={`sidebar-backdrop ${isMobileSidebarOpen ? 'active' : ''}`}
+        onClick={() => setIsMobileSidebarOpen(false)}
+      />
+
       <Sidebar
         chats={chats}
         activeChatId={activeChatId}
-        onSelectChat={setActiveChatId}
-        onNewChat={handleNewChat}
+        isOpenMobile={isMobileSidebarOpen}
+        onCloseMobile={() => setIsMobileSidebarOpen(false)}
+        onSelectChat={(id) => {
+          setActiveChatId(id);
+          setIsMobileSidebarOpen(false);
+        }}
+        onNewChat={() => {
+          handleNewChat();
+          setIsMobileSidebarOpen(false);
+        }}
         onDeleteChat={handleDeleteChat}
-        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenSettings={() => {
+          setIsSettingsOpen(true);
+          setIsMobileSidebarOpen(false);
+        }}
         currentModel={settings.model}
         onModelChange={(m) => {
           const updated = { ...settings, model: m };
@@ -271,6 +288,7 @@ export default function App() {
           activeChatTitle={activeChat?.title}
           currentModel={settings.model}
           backendHealthy={backendHealthy}
+          onToggleMobileSidebar={() => setIsMobileSidebarOpen(prev => !prev)}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onClearCurrentChat={activeMessages.length > 0 ? handleClearCurrentChat : null}
           onExportChat={activeMessages.length > 0 ? handleExportChat : null}

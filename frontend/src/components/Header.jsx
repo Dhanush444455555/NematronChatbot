@@ -1,10 +1,11 @@
 import React from 'react';
-import { Settings, Sparkles, Trash2, Download, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Settings, Sparkles, Trash2, Download, ShieldCheck, ShieldAlert, Menu } from 'lucide-react';
 
 export default function Header({
   activeChatTitle,
   currentModel,
   backendHealthy,
+  onToggleMobileSidebar,
   onOpenSettings,
   onClearCurrentChat,
   onExportChat
@@ -21,6 +22,13 @@ export default function Header({
   return (
     <header className="top-header">
       <div className="header-title-group">
+        <button 
+          className="mobile-menu-btn" 
+          onClick={onToggleMobileSidebar}
+          title="Open Menu"
+        >
+          <Menu size={20} />
+        </button>
         <h2 className="header-title">{activeChatTitle || "New Conversation"}</h2>
         <div className="model-badge">
           <Sparkles size={13} />

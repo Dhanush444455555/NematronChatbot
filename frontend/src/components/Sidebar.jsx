@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Plus, MessageSquare, Trash2, Settings, Bot, Search } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, Settings, Bot, Search, X } from 'lucide-react';
 
 export default function Sidebar({
   chats,
   activeChatId,
+  isOpenMobile,
+  onCloseMobile,
   onSelectChat,
   onNewChat,
   onDeleteChat,
@@ -18,7 +20,7 @@ export default function Sidebar({
   );
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${isOpenMobile ? 'open' : ''}`}>
       <div className="sidebar-header">
         <div className="logo-badge">
           <div className="logo-icon">
@@ -29,6 +31,9 @@ export default function Sidebar({
             <span>Free AI Client</span>
           </div>
         </div>
+        <button className="mobile-close-btn" onClick={onCloseMobile} title="Close Sidebar">
+          <X size={20} />
+        </button>
       </div>
 
       <button className="new-chat-btn" onClick={onNewChat}>
