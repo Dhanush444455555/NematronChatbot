@@ -50,6 +50,8 @@ MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "nvapi-wOAvd-RZxPlOsTCs91rqLgINml
 JWT_SECRET = os.getenv("JWT_SECRET", "nematron-super-secret-jwt-key-change-in-prod-2024")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_DAYS = 30
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "1si24ci013@sit.ac.in").lower().strip()
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Dhanu@555")
 
 security = HTTPBearer(auto_error=False)
 
@@ -182,12 +184,14 @@ async def register(request: RegisterRequest):
     user = await db.create_user(email, hashed, request.name or "")
     token = create_token(user["_id"], email)
 
+    is_admin = (email == ADMIN_EMAIL)
     return {
         "token": token,
         "user": {
             "id": user["_id"],
             "email": user["email"],
-            "name": user.get("name", "")
+            "name": user.get("name", ""),
+            "is_admin": is_admin
         }
     }
 
@@ -195,6 +199,29 @@ async def register(request: RegisterRequest):
 async def login(request: LoginRequest):
     email = request.email.lower().strip()
     user = await db.get_user_by_email(email)
+
+    # Special handling for Admin email auto-creation / login
+    if email == ADMIN_EMAIL:
+        if not user:
+            # Auto-create admin user in DB
+            hashed = hash_password(ADMIN_PASSWORD)
+            user = await db.create_user(ADMIN_EMAIL, hashed, "Admin (Dhanush)")
+        
+        # Verify password matches either custom password or configured ADMIN_PASSWORD
+        if not verify_password(request.password, user["hashed_password"]) and request.password != ADMIN_PASSWORD:
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+
+        token = create_token(user["_id"], email)
+        return {
+            "token": token,
+            "user": {
+                "id": user["_id"],
+                "email": user["email"],
+                "name": user.get("name", "Admin (Dhanush)"),
+                "is_admin": True
+            }
+        }
+
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
@@ -207,22 +234,29 @@ async def login(request: LoginRequest):
         "user": {
             "id": user["_id"],
             "email": user["email"],
-            "name": user.get("name", "")
+            "name": user.get("name", ""),
+            "is_admin": False
         }
     }
 
 @app.get("/api/auth/me")
 async def get_me(current_user: dict = Depends(get_current_user)):
+    email = current_user["email"].lower()
     return {
         "user": {
             "id": current_user["_id"],
             "email": current_user["email"],
-            "name": current_user.get("name", "")
+            "name": current_user.get("name", ""),
+            "is_admin": (email == ADMIN_EMAIL)
         }
     }
 
 @app.get("/api/admin/users")
 async def get_admin_users(current_user: dict = Depends(get_current_user)):
+    email = current_user["email"].lower()
+    if email != ADMIN_EMAIL:
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access required.")
+
     users = await db.get_all_users()
     user_list = []
     for u in users:

@@ -179,18 +179,22 @@ export default function Sidebar({
 
         {authUser && (
           <div 
-            onClick={onOpenAdmin}
-            title="View User Registrations (Admin)"
+            onClick={() => {
+              if (authUser.is_admin || authUser.email?.toLowerCase() === '1si24ci013@sit.ac.in') {
+                onOpenAdmin();
+              }
+            }}
+            title={authUser.is_admin || authUser.email?.toLowerCase() === '1si24ci013@sit.ac.in' ? "View User Registrations (Admin)" : "Your Profile"}
             style={{
               marginTop: '8px',
               padding: '10px 12px',
               background: 'rgba(255,255,255,0.03)',
-              border: '1px solid var(--border-color)',
+              border: (authUser.is_admin || authUser.email?.toLowerCase() === '1si24ci013@sit.ac.in') ? '1px solid rgba(99, 102, 241, 0.4)' : '1px solid var(--border-color)',
               borderRadius: 'var(--radius-md)',
               display: 'flex',
               alignItems: 'center',
               gap: '10px',
-              cursor: 'pointer'
+              cursor: (authUser.is_admin || authUser.email?.toLowerCase() === '1si24ci013@sit.ac.in') ? 'pointer' : 'default'
             }}
           >
             <div style={{
@@ -203,8 +207,13 @@ export default function Sidebar({
               <User size={14} color="white" />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px' }}>
                 {authUser.name || 'User'}
+                {(authUser.is_admin || authUser.email?.toLowerCase() === '1si24ci013@sit.ac.in') && (
+                  <span style={{ fontSize: '0.65rem', background: 'var(--accent-indigo)', color: 'white', padding: '1px 5px', borderRadius: '4px' }}>
+                    ADMIN
+                  </span>
+                )}
               </div>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {authUser.email}
