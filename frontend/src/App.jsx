@@ -4,6 +4,7 @@ import Sidebar from './components/Sidebar';
 import ChatMessage from './components/ChatMessage';
 import ChatInput from './components/ChatInput';
 import SettingsModal from './components/SettingsModal';
+import FloatingHistoryButton from './components/FloatingHistoryButton';
 import {
   loadSettings,
   saveSettings,
@@ -219,6 +220,11 @@ export default function App() {
 
   return (
     <div className="app-container">
+      <FloatingHistoryButton
+        onOpenHistory={() => setIsMobileSidebarOpen(true)}
+        onNewChat={handleNewChat}
+      />
+
       <div 
         className={`sidebar-backdrop ${isMobileSidebarOpen ? 'active' : ''}`}
         onClick={() => setIsMobileSidebarOpen(false)}
