@@ -261,3 +261,13 @@ async def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
         if u["_id"] == user_id:
             return dict(u)
     return None
+
+async def get_all_users() -> List[Dict[str, Any]]:
+    if _USE_MONGO:
+        try:
+            cur = users_col.find().sort("created_at", -1)
+            return [_fmt(u) for u in await cur.to_list(length=1000)]
+        except Exception:
+            return []
+    return [dict(u) for u in _users.values()]
+

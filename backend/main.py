@@ -221,6 +221,19 @@ async def get_me(current_user: dict = Depends(get_current_user)):
         }
     }
 
+@app.get("/api/admin/users")
+async def get_admin_users(current_user: dict = Depends(get_current_user)):
+    users = await db.get_all_users()
+    user_list = []
+    for u in users:
+        user_list.append({
+            "id": str(u.get("_id", "")),
+            "email": u.get("email", ""),
+            "name": u.get("name", ""),
+            "created_at": str(u.get("created_at", ""))
+        })
+    return {"users": user_list, "total": len(user_list)}
+
 # --- CHAT MANAGEMENT API ---
 @app.get("/api/chats")
 async def get_chats():

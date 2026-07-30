@@ -14,7 +14,8 @@ export default function Sidebar({
   currentModel,
   onModelChange,
   authUser,
-  onLogout
+  onLogout,
+  onOpenAdmin
 }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [editingId, setEditingId] = useState(null);
@@ -177,16 +178,21 @@ export default function Sidebar({
         </button>
 
         {authUser && (
-          <div style={{
-            marginTop: '8px',
-            padding: '10px 12px',
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid var(--border-color)',
-            borderRadius: 'var(--radius-md)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px'
-          }}>
+          <div 
+            onClick={onOpenAdmin}
+            title="View User Registrations (Admin)"
+            style={{
+              marginTop: '8px',
+              padding: '10px 12px',
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-md)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              cursor: 'pointer'
+            }}
+          >
             <div style={{
               width: '30px', height: '30px',
               borderRadius: '50%',
@@ -205,7 +211,10 @@ export default function Sidebar({
               </div>
             </div>
             <button
-              onClick={onLogout}
+              onClick={(e) => {
+                e.stopPropagation();
+                onLogout();
+              }}
               title="Sign out"
               style={{
                 background: 'none', border: 'none', color: 'var(--text-muted)',

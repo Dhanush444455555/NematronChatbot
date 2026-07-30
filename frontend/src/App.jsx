@@ -6,6 +6,7 @@ import ChatInput from './components/ChatInput';
 import SettingsModal from './components/SettingsModal';
 import FloatingHistoryButton from './components/FloatingHistoryButton';
 import LoginPage from './components/LoginPage';
+import AdminModal from './components/AdminModal';
 import {
   loadSettings,
   saveSettings,
@@ -34,6 +35,7 @@ function ChatApp({ authUser, onLogout }) {
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [backendHealthy, setBackendHealthy] = useState(true);
 
@@ -49,6 +51,22 @@ function ChatApp({ authUser, onLogout }) {
     });
 
     loadAllChats();
+
+    // Check secret URL param ?admin=true
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('admin') === 'true') {
+      setIsAdminOpen(true);
+    }
+
+    // Secret shortcut: Ctrl + Shift + A
+    const handleKeyDown = (e) => {
+      if (e.ctrlKey && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
+        e.preventDefault();
+        setIsAdminOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   const loadAllChats = async () => {
@@ -257,6 +275,7 @@ function ChatApp({ authUser, onLogout }) {
         }}
         authUser={authUser}
         onLogout={onLogout}
+        onOpenAdmin={() => setIsAdminOpen(true)}
       />
 
       <main className="main-workspace">
@@ -306,6 +325,11 @@ function ChatApp({ authUser, onLogout }) {
         onClose={() => setIsSettingsOpen(false)}
         settings={settings}
         onSaveSettings={handleSaveSettings}
+      />
+
+      <AdminModal
+        isOpen={isAdminOpen}
+        onClose={() => setIsAdminOpen(false)}
       />
     </div>
   );
