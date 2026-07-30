@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Menu, Plus } from 'lucide-react';
 
 export default function FloatingHistoryButton({ onOpenHistory, onNewChat }) {
-  // Default position: left edge (12px), top (130px) as marked in user photo 3
+  // Default position: left edge (12px), top (130px)
   const [pos, setPos] = useState(() => {
     try {
       const saved = localStorage.getItem('floating_btn_pos');
@@ -12,12 +12,12 @@ export default function FloatingHistoryButton({ onOpenHistory, onNewChat }) {
   });
 
   const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef({ startX: 0, startY: 0, initialX: 0, initialY: 0, moved: false });
+  const dragRef = useRef({ startX: 0, startY: 0, initialX: 0, initialY: 0, moved: false });
 
-  // Touch Handlers for Draggable Button on Mobile
+  // ── Touch Drag Handling ──────────────────────────────────────────
   const handleTouchStart = (e) => {
     const touch = e.touches[0];
-    dragStartRef.current = {
+    dragRef.current = {
       startX: touch.clientX,
       startY: touch.clientY,
       initialX: pos.x,
@@ -28,31 +28,45 @@ export default function FloatingHistoryButton({ onOpenHistory, onNewChat }) {
   };
 
   const handleTouchMove = (e) => {
-    if (!dragStartRef.current) return;
+    if (!dragRef.current) return;
     const touch = e.touches[0];
-    const dx = touch.clientX - dragStartRef.current.startX;
-    const dy = touch.clientY - dragStartRef.current.startY;
+    const dx = touch.clientX - dragRef.current.startX;
+    const dy = touch.clientY - dragRef.current.startY;
 
-    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-      dragStartRef.current.moved = true;
+    // Use 15px distance threshold to ignore small finger tap micro-jitters
+    if (Math.hypot(dx, dy) > 15) {
+      dragRef.current.moved = true;
     }
 
-    const newX = Math.max(8, Math.min(window.innerWidth - 130, dragStartRef.current.initialX + dx));
-    const newY = Math.max(60, Math.min(window.innerHeight - 100, dragStartRef.current.initialY + dy));
-
-    setPos({ x: newX, y: newY });
+    if (dragRef.current.moved) {
+      const newX = Math.max(4, Math.min(window.innerWidth - 130, dragRef.current.initialX + dx));
+      const newY = Math.max(40, Math.min(window.innerHeight - 80, dragRef.current.initialY + dy));
+      setPos({ x: newX, y: newY });
+    }
   };
 
   const handleTouchEnd = () => {
     setIsDragging(false);
-    if (!dragStartRef.current.moved) {
-      // Small or no movement -> Tap action -> Open History Drawer
-      onOpenHistory();
-    } else {
-      // Save position preference
+    if (dragRef.current.moved) {
+      // Save dragged position
       try {
         localStorage.setItem('floating_btn_pos', JSON.stringify(pos));
       } catch (e) {}
+    }
+  };
+
+  // ── Tap / Click Actions ──────────────────────────────────────────
+  const handleHistoryAction = (e) => {
+    e.stopPropagation();
+    if (!dragRef.current.moved) {
+      onOpenHistory();
+    }
+  };
+
+  const handleNewChatAction = (e) => {
+    e.stopPropagation();
+    if (!dragRef.current.moved) {
+      onNewChat();
     }
   };
 
@@ -69,12 +83,14 @@ export default function FloatingHistoryButton({ onOpenHistory, onNewChat }) {
     >
       <button
         className="floating-history-btn"
-        onClick={(e) => {
-          if (!dragStartRef.current.moved) {
+        onClick={handleHistoryAction}
+        onTouchEnd={(e) => {
+          if (!dragRef.current.moved) {
+            e.preventDefault(); // Prevent double trigger with click
             onOpenHistory();
           }
         }}
-        title="Tap to open Chat History (Drag to move)"
+        title="Tap to open History (Drag to move)"
       >
         <Menu size={18} />
         <span>History</span>
@@ -82,11 +98,14 @@ export default function FloatingHistoryButton({ onOpenHistory, onNewChat }) {
 
       <button
         className="floating-new-chat-btn"
-        onClick={(e) => {
-          e.stopPropagation();
-          onNewChat();
+        onClick={handleNewChatAction}
+        onTouchEnd={(e) => {
+          if (!dragRef.current.moved) {
+            e.preventDefault(); // Prevent double trigger with click
+            onNewChat();
+          }
         }}
-        title="Start New Conversation"
+        title="Start New Chat"
       >
         <Plus size={16} />
       </button>
