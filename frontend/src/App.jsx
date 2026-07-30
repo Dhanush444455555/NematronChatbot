@@ -7,19 +7,25 @@ import SettingsModal from './components/SettingsModal';
 import {
   loadSettings,
   saveSettings,
-  loadChats,
-  saveChats,
   loadActiveChatId,
   saveActiveChatId,
   DEFAULT_SETTINGS
 } from './utils/storage';
-import { checkBackendHealth, streamChatCompletion } from './services/api';
+import { 
+  checkBackendHealth, 
+  streamChatCompletion,
+  fetchChats,
+  fetchChat,
+  deleteChat as apiDeleteChat,
+  renameChat as apiRenameChat
+} from './services/api';
 import { Bot } from 'lucide-react';
 
 export default function App() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [chats, setChats] = useState([]);
   const [activeChatId, setActiveChatId] = useState(null);
+  const [activeMessages, setActiveMessages] = useState([]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -29,72 +35,70 @@ export default function App() {
   const abortControllerRef = useRef(null);
   const messagesEndRef = useRef(null);
 
-  // Initialize from localStorage
   useEffect(() => {
     const loadedSettings = loadSettings();
     setSettings(loadedSettings);
 
-    const loadedChats = loadChats();
-    setChats(loadedChats);
-
-    const activeId = loadActiveChatId();
-    if (activeId && loadedChats.some(c => c.id === activeId)) {
-      setActiveChatId(activeId);
-    } else if (loadedChats.length > 0) {
-      setActiveChatId(loadedChats[0].id);
-    }
-
     checkBackendHealth(loadedSettings.backendUrl).then(res => {
       setBackendHealthy(res.healthy);
     });
+
+    loadAllChats();
   }, []);
 
-  useEffect(() => { saveChats(chats); }, [chats]);
-  useEffect(() => { saveActiveChatId(activeChatId); }, [activeChatId]);
+  const loadAllChats = async () => {
+    const loadedChats = await fetchChats(settings.backendUrl);
+    setChats(loadedChats);
+    
+    const activeId = loadActiveChatId();
+    if (activeId && loadedChats.some(c => c._id === activeId)) {
+      setActiveChatId(activeId);
+    } else if (loadedChats.length > 0) {
+      setActiveChatId(loadedChats[0]._id);
+    }
+  };
 
-  const activeChat = chats.find(c => c.id === activeChatId);
-  const activeMessages = activeChat ? activeChat.messages : [];
+  useEffect(() => {
+    if (activeChatId) {
+      saveActiveChatId(activeChatId);
+      loadActiveChatMessages(activeChatId);
+    } else {
+      setActiveMessages([]);
+    }
+  }, [activeChatId]);
+
+  const loadActiveChatMessages = async (id) => {
+    const data = await fetchChat(id, settings.backendUrl);
+    if (data && data.messages) {
+      setActiveMessages(data.messages);
+    } else {
+      setActiveMessages([]);
+    }
+  };
+
+  const activeChatTitle = chats.find(c => c._id === activeChatId)?.title;
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeMessages, isStreaming]);
 
   const handleNewChat = () => {
-    const newChat = {
-      id: `chat_${Date.now()}`,
-      title: "New Conversation",
-      createdAt: new Date().toISOString(),
-      messages: []
-    };
-    setChats(prev => [newChat, ...prev]);
-    setActiveChatId(newChat.id);
+    setActiveChatId(null);
+    setActiveMessages([]);
   };
 
-  const handleDeleteChat = (chatId) => {
-    setChats(prev => prev.filter(c => c.id !== chatId));
+  const handleDeleteChat = async (chatId) => {
+    await apiDeleteChat(chatId, settings.backendUrl);
+    setChats(prev => prev.filter(c => c._id !== chatId));
     if (activeChatId === chatId) {
-      const remaining = chats.filter(c => c.id !== chatId);
-      setActiveChatId(remaining.length > 0 ? remaining[0].id : null);
+      const remaining = chats.filter(c => c._id !== chatId);
+      setActiveChatId(remaining.length > 0 ? remaining[0]._id : null);
     }
   };
 
-  const handleClearCurrentChat = () => {
-    if (!activeChatId) return;
-    setChats(prev => prev.map(c => c.id === activeChatId ? { ...c, messages: [] } : c));
-  };
-
-  const handleExportChat = () => {
-    if (!activeMessages || activeMessages.length === 0) return;
-    const mdContent = activeMessages
-      .map(m => `### ${m.role === 'user' ? 'User' : 'Nemotron'}\n\n${m.content}\n\n---`)
-      .join('\n\n');
-    const blob = new Blob([mdContent], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${(activeChat?.title || 'chat').replace(/[^a-z0-9]/gi, '_').toLowerCase()}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleRenameChat = async (chatId, newTitle) => {
+    await apiRenameChat(chatId, newTitle, settings.backendUrl);
+    setChats(prev => prev.map(c => c._id === chatId ? { ...c, title: newTitle } : c));
   };
 
   const handleSaveSettings = (newSettings) => {
@@ -113,66 +117,49 @@ export default function App() {
     setIsStreaming(false);
   };
 
-  const handleSendMessage = async (textToSend) => {
+  const handleSendMessage = async (textToSend, uploadedFileIds = []) => {
     const text = (textToSend || input).trim();
-    if (!text || isStreaming) return;
+    if ((!text && uploadedFileIds.length === 0) || isStreaming) return;
 
-    let targetChatId = activeChatId;
-    let updatedChats = [...chats];
-
-    if (!targetChatId || !chats.some(c => c.id === targetChatId)) {
-      const newChat = {
-        id: `chat_${Date.now()}`,
-        title: text.length > 30 ? `${text.slice(0, 30)}...` : text,
-        createdAt: new Date().toISOString(),
-        messages: []
-      };
-      updatedChats = [newChat, ...updatedChats];
-      targetChatId = newChat.id;
-      setActiveChatId(targetChatId);
-    }
-
+    // Optimistically add user message
     const userMessage = {
-      id: `msg_${Date.now()}`,
+      _id: `msg_${Date.now()}`,
       role: 'user',
       content: text,
       timestamp: new Date().toISOString()
     };
 
-    const targetChatObj = updatedChats.find(c => c.id === targetChatId);
-    if (targetChatObj && targetChatObj.messages.length === 0) {
-      targetChatObj.title = text.length > 30 ? `${text.slice(0, 30)}...` : text;
-    }
+    setActiveMessages(prev => [...prev, userMessage]);
 
-    targetChatObj.messages.push(userMessage);
-
+    // Optimistically add assistant thinking placeholder
     const assistantMessageId = `msg_assistant_${Date.now()}`;
     const assistantMessage = {
-      id: assistantMessageId,
+      _id: assistantMessageId,
       role: 'assistant',
       content: '',
       thinking: '',
       isThinking: false,
       timestamp: new Date().toISOString()
     };
-    targetChatObj.messages.push(assistantMessage);
+    setActiveMessages(prev => [...prev, assistantMessage]);
 
-    setChats([...updatedChats]);
     setInput('');
     setIsStreaming(true);
 
-    const historyPayload = targetChatObj.messages
-      .slice(0, -1)
-      .map(m => ({ role: m.role, content: m.content }));
+    const historyPayload = [...activeMessages, userMessage].map(m => ({
+      role: m.role,
+      content: m.content
+    }));
 
     abortControllerRef.current = new AbortController();
 
     await streamChatCompletion({
+      chatId: activeChatId,
       messages: historyPayload,
+      fileIds: uploadedFileIds,
       model: settings.model,
       systemPrompt: settings.systemPrompt,
       temperature: settings.temperature,
-      maxTokens: settings.maxTokens,
       topP: settings.topP,
       enableThinking: settings.enableThinking,
       reasoningBudget: settings.reasoningBudget,
@@ -181,71 +168,51 @@ export default function App() {
       backendUrl: settings.backendUrl,
       signal: abortControllerRef.current.signal,
 
+      onChatId: (newChatId) => {
+        if (!activeChatId) {
+          setActiveChatId(newChatId);
+          // Optimistically add to sidebar
+          setChats(prev => [{ _id: newChatId, title: text.slice(0,30) || "New Conversation" }, ...prev]);
+        }
+      },
+
       onThinkingStart: () => {
-        setChats(prev => prev.map(c => {
-          if (c.id !== targetChatId) return c;
-          return {
-            ...c,
-            messages: c.messages.map(m =>
-              m.id === assistantMessageId ? { ...m, isThinking: true } : m
-            )
-          };
-        }));
+        setActiveMessages(prev => prev.map(m =>
+          m._id === assistantMessageId ? { ...m, isThinking: true } : m
+        ));
       },
 
       onThinkingChunk: (chunk) => {
-        setChats(prev => prev.map(c => {
-          if (c.id !== targetChatId) return c;
-          return {
-            ...c,
-            messages: c.messages.map(m =>
-              m.id === assistantMessageId ? { ...m, thinking: (m.thinking || '') + chunk } : m
-            )
-          };
-        }));
+        setActiveMessages(prev => prev.map(m =>
+          m._id === assistantMessageId ? { ...m, thinking: (m.thinking || '') + chunk } : m
+        ));
       },
 
       onThinkingEnd: () => {
-        setChats(prev => prev.map(c => {
-          if (c.id !== targetChatId) return c;
-          return {
-            ...c,
-            messages: c.messages.map(m =>
-              m.id === assistantMessageId ? { ...m, isThinking: false } : m
-            )
-          };
-        }));
+        setActiveMessages(prev => prev.map(m =>
+          m._id === assistantMessageId ? { ...m, isThinking: false } : m
+        ));
       },
 
       onChunk: (chunk) => {
-        setChats(prev => prev.map(c => {
-          if (c.id !== targetChatId) return c;
-          return {
-            ...c,
-            messages: c.messages.map(m =>
-              m.id === assistantMessageId ? { ...m, content: m.content + chunk } : m
-            )
-          };
-        }));
+        setActiveMessages(prev => prev.map(m =>
+          m._id === assistantMessageId ? { ...m, content: m.content + chunk } : m
+        ));
       },
 
       onError: (errMessage) => {
-        setChats(prev => prev.map(c => {
-          if (c.id !== targetChatId) return c;
-          return {
-            ...c,
-            messages: c.messages.map(m =>
-              m.id === assistantMessageId
-                ? { ...m, content: `⚠️ **Error**: ${errMessage}\n\n*Ensure the Python backend is running at ${settings.backendUrl}*` }
-                : m
-            )
-          };
-        }));
+        setActiveMessages(prev => prev.map(m =>
+          m._id === assistantMessageId
+            ? { ...m, content: `⚠️ **Error**: ${errMessage}` }
+            : m
+        ));
         setIsStreaming(false);
       },
 
       onComplete: () => {
         setIsStreaming(false);
+        // Refresh chats to get updated titles/timestamps
+        loadAllChats();
       }
     });
   };
@@ -271,6 +238,7 @@ export default function App() {
           setIsMobileSidebarOpen(false);
         }}
         onDeleteChat={handleDeleteChat}
+        onRenameChat={handleRenameChat}
         onOpenSettings={() => {
           setIsSettingsOpen(true);
           setIsMobileSidebarOpen(false);
@@ -285,13 +253,11 @@ export default function App() {
 
       <main className="main-workspace">
         <Header
-          activeChatTitle={activeChat?.title}
+          activeChatTitle={activeChatTitle}
           currentModel={settings.model}
           backendHealthy={backendHealthy}
           onToggleMobileSidebar={() => setIsMobileSidebarOpen(prev => !prev)}
           onOpenSettings={() => setIsSettingsOpen(true)}
-          onClearCurrentChat={activeMessages.length > 0 ? handleClearCurrentChat : null}
-          onExportChat={activeMessages.length > 0 ? handleExportChat : null}
         />
 
         <div className="chat-messages-container">
@@ -300,14 +266,14 @@ export default function App() {
               <div className="empty-icon">
                 <Bot size={34} />
               </div>
-              <h2>NVIDIA Nemotron is ready</h2>
+              <h2>NVIDIA Nemotron Agents</h2>
               <p>
-                Powered by <strong>nvidia/nemotron-3-ultra-550b-a55b</strong> with deep chain-of-thought reasoning. Select a starter prompt or ask anything.
+                Upload documents, images, ask for web searches, or request code. The intelligent agent router will handle it.
               </p>
             </div>
           ) : (
             activeMessages.map(msg => (
-              <ChatMessage key={msg.id} message={msg} />
+              <ChatMessage key={msg._id || msg.id} message={msg} />
             ))
           )}
           <div ref={messagesEndRef} />
@@ -320,6 +286,7 @@ export default function App() {
           onStopStreaming={handleStopStreaming}
           isStreaming={isStreaming}
           showQuickPrompts={activeMessages.length === 0}
+          backendUrl={settings.backendUrl}
         />
       </main>
 

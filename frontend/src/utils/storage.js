@@ -6,19 +6,19 @@ const STORAGE_KEYS = {
 };
 
 // Increment this when defaults change to auto-clear stale cached settings
-const SETTINGS_VERSION = 2;
+const SETTINGS_VERSION = 5;
 
 export const DEFAULT_SETTINGS = {
-  apiKey: "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",
+  apiKey: "",
   baseUrl: "https://integrate.api.nvidia.com/v1",
-  backendUrl: "http://localhost:8000",
+  // Empty string = same-origin (works on Vercel). Users can override to http://localhost:8000 locally.
+  backendUrl: import.meta.env.VITE_BACKEND_URL ?? "",
   model: "nvidia/nemotron-3-ultra-550b-a55b",
   systemPrompt: "You are a helpful, harmless, and intelligent AI assistant powered by NVIDIA Nemotron.",
   temperature: 1.0,
-  maxTokens: 16384,
   topP: 0.95,
   enableThinking: true,
-  reasoningBudget: 16384
+  reasoningBudget: 32768
 };
 
 export function loadSettings() {

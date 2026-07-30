@@ -101,12 +101,12 @@ export default function SettingsModal({ isOpen, onClose, settings, onSaveSetting
                 <input
                   type="range"
                   min={1024}
-                  max={32768}
+                  max={65536}
                   step={1024}
-                  value={formData.reasoningBudget || 16384}
+                  value={formData.reasoningBudget || 32768}
                   onChange={(e) => handleChange('reasoningBudget', parseInt(e.target.value))}
                 />
-                <span className="slider-value">{(formData.reasoningBudget || 16384).toLocaleString()}</span>
+                <span className="slider-value">{(formData.reasoningBudget || 32768).toLocaleString()}</span>
               </div>
             </div>
           )}
@@ -150,18 +150,6 @@ export default function SettingsModal({ isOpen, onClose, settings, onSaveSetting
               />
               <span className="slider-value">{formData.topP || 0.95}</span>
             </div>
-          </div>
-
-          <div className="form-group">
-            <label>Max Response Tokens</label>
-            <input
-              type="number"
-              className="form-input"
-              value={formData.maxTokens}
-              onChange={(e) => handleChange('maxTokens', parseInt(e.target.value, 10))}
-              min={512}
-              max={32768}
-            />
           </div>
 
           <button type="submit" className="save-settings-btn">

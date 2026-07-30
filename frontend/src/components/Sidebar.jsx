@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, MessageSquare, Trash2, Settings, Bot, Search, X } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, Edit2, Settings, Bot, Search, X } from 'lucide-react';
 
 export default function Sidebar({
   chats,
@@ -9,15 +9,32 @@ export default function Sidebar({
   onSelectChat,
   onNewChat,
   onDeleteChat,
+  onRenameChat,
   onOpenSettings,
   currentModel,
   onModelChange
 }) {
   const [searchTerm, setSearchTerm] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editTitle, setEditTitle] = useState("");
 
   const filteredChats = chats.filter(c => 
     (c.title || "New Chat").toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const startRename = (chat, e) => {
+    e.stopPropagation();
+    setEditingId(chat._id);
+    setEditTitle(chat.title || "New Chat");
+  };
+
+  const handleRenameSubmit = (e) => {
+    e.preventDefault();
+    if (editTitle.trim() && editingId) {
+      onRenameChat(editingId, editTitle.trim());
+    }
+    setEditingId(null);
+  };
 
   return (
     <aside className={`sidebar ${isOpenMobile ? 'open' : ''}`}>
@@ -27,8 +44,8 @@ export default function Sidebar({
             <Bot size={22} />
           </div>
           <div className="logo-text">
-            <h1>Nemotron Workspace</h1>
-            <span>Free AI Client</span>
+            <h1>Nemotron Agents</h1>
+            <span>Advanced AI Client</span>
           </div>
         </div>
         <button className="mobile-close-btn" onClick={onCloseMobile} title="Close Sidebar">
@@ -77,24 +94,59 @@ export default function Sidebar({
         ) : (
           filteredChats.map((chat) => (
             <div
-              key={chat.id}
-              className={`history-item ${chat.id === activeChatId ? 'active' : ''}`}
-              onClick={() => onSelectChat(chat.id)}
+              key={chat._id}
+              className={`history-item ${chat._id === activeChatId ? 'active' : ''}`}
+              onClick={() => onSelectChat(chat._id)}
             >
-              <div className="history-title">
-                <MessageSquare size={15} />
-                <span>{chat.title || "Untitled Conversation"}</span>
-              </div>
-              <button
-                className="delete-chat-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDeleteChat(chat.id);
-                }}
-                title="Delete chat"
-              >
-                <Trash2 size={14} />
-              </button>
+              {editingId === chat._id ? (
+                <form onSubmit={handleRenameSubmit} style={{ flex: 1, display: 'flex' }} onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="text"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    onBlur={handleRenameSubmit}
+                    autoFocus
+                    style={{
+                      width: '100%',
+                      background: 'rgba(0,0,0,0.3)',
+                      color: 'white',
+                      border: '1px solid var(--accent-indigo)',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      outline: 'none',
+                      fontSize: '0.88rem'
+                    }}
+                  />
+                </form>
+              ) : (
+                <>
+                  <div className="history-title">
+                    <MessageSquare size={15} />
+                    <span>{chat.title || "Untitled Conversation"}</span>
+                  </div>
+                  <div className="history-actions" style={{ display: 'flex', gap: '4px' }}>
+                    <button
+                      className="delete-chat-btn"
+                      onClick={(e) => startRename(chat, e)}
+                      title="Rename chat"
+                      style={{ padding: '2px' }}
+                    >
+                      <Edit2 size={13} />
+                    </button>
+                    <button
+                      className="delete-chat-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteChat(chat._id);
+                      }}
+                      title="Delete chat"
+                      style={{ padding: '2px' }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           ))
         )}

@@ -1,23 +1,29 @@
 import os
 import json
-from typing import List, Optional
-from fastapi import FastAPI, HTTPException
+import asyncio
+import requests as http_requests
+from typing import List, Optional, Dict, Any
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from openai import OpenAI
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+import database as db
+from extractors import process_file_upload
+from agents import determine_agent_and_prompt
+
+# Load .env from the same directory as this file (works on both local and Vercel)
+_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+load_dotenv(dotenv_path=_env_path, override=False)
 
 app = FastAPI(
     title="NVIDIA Nemotron AI Backend",
     description="Python FastAPI backend using NVIDIA NIM API with Nemotron thinking model",
-    version="2.0.0"
+    version="2.1.0"
 )
 
-# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,32 +32,42 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# NVIDIA NIM configuration
-NVIDIA_API_KEY = os.getenv(
-    "NVIDIA_API_KEY",
-    "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"
-)
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "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")
 NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "nvidia/nemotron-3-ultra-550b-a55b")
+EMBED_MODEL = os.getenv("EMBED_MODEL", "nvidia/nemotron-3-embed-1b")
+# MiniMax M3 uses a separate API key on the same NVIDIA NIM base URL
+MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "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")
 
+MODEL_API_KEY_MAP: dict = {
+    "minimaxai/minimax-m3": MINIMAX_API_KEY,
+}
+
+def resolve_api_key(model: str, request_key: str) -> str:
+    """Return the correct API key for a given model."""
+    if request_key:
+        return request_key
+    return MODEL_API_KEY_MAP.get(model, NVIDIA_API_KEY)
 
 class ChatMessage(BaseModel):
     role: str
     content: str
 
-
 class ChatRequest(BaseModel):
+    chat_id: Optional[str] = None
     messages: List[ChatMessage]
+    file_ids: Optional[List[str]] = []
     model: Optional[str] = DEFAULT_MODEL
-    system_prompt: Optional[str] = "You are a helpful, harmless, and intelligent AI assistant."
+    system_prompt: Optional[str] = None
     temperature: Optional[float] = 1.0
-    max_tokens: Optional[int] = 16384
     top_p: Optional[float] = 0.95
     enable_thinking: Optional[bool] = True
-    reasoning_budget: Optional[int] = 16384
+    reasoning_budget: Optional[int] = 32768
     api_key: Optional[str] = None
     base_url: Optional[str] = None
 
+class ChatRenameRequest(BaseModel):
+    title: str
 
 AVAILABLE_MODELS = [
     {
@@ -59,6 +75,12 @@ AVAILABLE_MODELS = [
         "name": "Nemotron 3 Ultra 550B",
         "description": "NVIDIA's most powerful thinking model with deep chain-of-thought reasoning.",
         "badge": "Thinking 🧠"
+    },
+    {
+        "id": "minimaxai/minimax-m3",
+        "name": "MiniMax M3",
+        "description": "MiniMax M3 — powerful multi-modal large language model via NVIDIA NIM.",
+        "badge": "Multi-modal 🌟"
     },
     {
         "id": "nvidia/llama-3.1-nemotron-70b-instruct",
@@ -70,54 +92,98 @@ AVAILABLE_MODELS = [
         "id": "nvidia/mistral-nemo-12b-instruct",
         "name": "Mistral Nemo 12B",
         "description": "Compact and efficient multilingual model for quick tasks.",
-        "badge": "Compact"
+        "badge": "Compact 🔹"
     }
 ]
 
-
 @app.get("/")
 def read_root():
-    return {
-        "status": "online",
-        "message": "NVIDIA Nemotron FastAPI Backend is running.",
-        "docs": "/docs",
-        "default_model": DEFAULT_MODEL
-    }
-
+    return {"status": "online", "message": "NVIDIA Nemotron Backend is running."}
 
 @app.get("/health")
 def health_check():
-    return {
-        "status": "healthy",
-        "has_api_key": bool(NVIDIA_API_KEY),
-        "base_url": NVIDIA_BASE_URL,
-        "default_model": DEFAULT_MODEL
-    }
-
+    return {"status": "ok", "message": "Backend is healthy."}
 
 @app.get("/api/models")
 def get_models():
     return {"models": AVAILABLE_MODELS}
 
+# --- CHAT MANAGEMENT API ---
+@app.get("/api/chats")
+async def get_chats():
+    chats = await db.get_chats()
+    return {"chats": chats}
 
-def generate_stream(request_data: ChatRequest):
-    """
-    Generator that streams from NVIDIA NIM API using OpenAI client.
-    Handles both reasoning_content (thinking tokens) and regular content.
-    """
-    api_key = request_data.api_key or NVIDIA_API_KEY
+@app.get("/api/chats/{chat_id}")
+async def get_chat(chat_id: str):
+    chat = await db.get_chat(chat_id)
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    messages = await db.get_messages(chat_id)
+    return {"chat": chat, "messages": messages}
+
+@app.put("/api/chats/{chat_id}")
+async def rename_chat(chat_id: str, request: ChatRenameRequest):
+    success = await db.update_chat_title(chat_id, request.title)
+    if not success:
+        raise HTTPException(status_code=404, detail="Chat not found or could not be updated")
+    return {"success": True}
+
+@app.delete("/api/chats/{chat_id}")
+async def delete_chat(chat_id: str):
+    success = await db.delete_chat(chat_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Chat not found or could not be deleted")
+    return {"success": True}
+
+# --- UPLOAD API ---
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...)):
+    try:
+        contents = await file.read()
+        extracted_text = process_file_upload(file.filename, file.content_type, contents)
+        file_record = await db.add_file_record(file.filename, file.content_type, extracted_text)
+        return {"success": True, "file_id": str(file_record["_id"]), "filename": file.filename}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Models that must use the plain requests fallback (no SSE streaming support)
+NON_STREAMING_MODELS = {"minimaxai/minimax-m3"}
+
+# --- CORE CHAT API ---
+async def generate_stream(request_data: ChatRequest, chat_id: str):
+    model = request_data.model or DEFAULT_MODEL
+    api_key = resolve_api_key(model, request_data.api_key or "")
     base_url = request_data.base_url or NVIDIA_BASE_URL
 
-    client = OpenAI(api_key=api_key, base_url=base_url)
+    # ── MiniMax M3 (and similar) – plain HTTP, no streaming ──────────────────
+    if model in NON_STREAMING_MODELS:
+        async for event in _generate_non_stream(request_data, chat_id, model, api_key, base_url):
+            yield event
+        return
 
-    # Build messages list with optional system prompt
-    messages = []
-    if request_data.system_prompt:
-        messages.append({"role": "system", "content": request_data.system_prompt})
+    client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+
+    # Gather file data and memories
+    files_data = []
+    if request_data.file_ids:
+        for fid in request_data.file_ids:
+            f = await db.get_file_record(fid)
+            if f:
+                files_data.append(f)
+                
+    memories = await db.get_all_memories()
+
+    # Get the last user message
+    user_msg_content = request_data.messages[-1].content if request_data.messages else ""
+
+    # Build Augmented System Prompt using Agents
+    augmented_system_prompt = determine_agent_and_prompt(user_msg_content, files_data, memories)
+
+    messages = [{"role": "system", "content": augmented_system_prompt}]
     for m in request_data.messages:
         messages.append({"role": m.role, "content": m.content})
 
-    # Extra body for NVIDIA thinking models
     extra_body = {}
     if request_data.enable_thinking:
         extra_body = {
@@ -126,58 +192,142 @@ def generate_stream(request_data: ChatRequest):
         }
 
     try:
-        completion = client.chat.completions.create(
+        completion = await client.chat.completions.create(
             model=request_data.model or DEFAULT_MODEL,
             messages=messages,
             temperature=request_data.temperature if request_data.temperature is not None else 1.0,
             top_p=request_data.top_p if request_data.top_p is not None else 0.95,
-            max_tokens=request_data.max_tokens or 16384,
             extra_body=extra_body if extra_body else None,
             stream=True
         )
 
         in_thinking = False
+        full_assistant_content = ""
+        full_thinking_content = ""
         
-        for chunk in completion:
+        # We need to yield chat_id first so frontend knows
+        yield f"data: {json.dumps({'chat_id': chat_id})}\n\n"
+
+        async for chunk in completion:
             if not chunk.choices:
                 continue
 
             delta = chunk.choices[0].delta
-
-            # Handle NVIDIA reasoning/thinking tokens
             reasoning = getattr(delta, "reasoning_content", None)
+            
             if reasoning:
+                full_thinking_content += reasoning
                 if not in_thinking:
-                    # Signal start of thinking block
                     yield f"data: {json.dumps({'thinking_start': True})}\n\n"
                     in_thinking = True
                 yield f"data: {json.dumps({'thinking': reasoning})}\n\n"
 
-            # Handle regular content tokens
             if delta.content is not None:
+                full_assistant_content += delta.content
                 if in_thinking:
-                    # Signal end of thinking block when regular content starts
                     yield f"data: {json.dumps({'thinking_end': True})}\n\n"
                     in_thinking = False
                 yield f"data: {json.dumps({'delta': delta.content})}\n\n"
 
         yield "data: [DONE]\n\n"
 
-    except Exception as e:
-        yield f"data: {json.dumps({'error': f'NVIDIA API Error: {str(e)}'})}\n\n"
+        # Save assistant message
+        final_content = full_assistant_content
+        if full_thinking_content:
+            final_content = f"<thought>\n{full_thinking_content}\n</thought>\n{full_assistant_content}"
+            
+        await db.add_message(chat_id, "assistant", final_content)
 
+    except Exception as e:
+        yield f"data: {json.dumps({'error': f'API Error: {str(e)}'})}\n\n"
+
+
+async def _generate_non_stream(
+    request_data: ChatRequest,
+    chat_id: str,
+    model: str,
+    api_key: str,
+    base_url: str,
+):
+    """Fallback for models that don't support SSE streaming (e.g. MiniMax M3).
+    Uses a plain HTTP POST via `requests` and yields the full response at once.
+    """
+    # Gather file data and memories (same as main stream path)
+    files_data = []
+    if request_data.file_ids:
+        for fid in request_data.file_ids:
+            f = await db.get_file_record(fid)
+            if f:
+                files_data.append(f)
+
+    memories = await db.get_all_memories()
+    user_msg_content = request_data.messages[-1].content if request_data.messages else ""
+    augmented_system_prompt = determine_agent_and_prompt(user_msg_content, files_data, memories)
+
+    messages = [{"role": "system", "content": augmented_system_prompt}]
+    for m in request_data.messages:
+        messages.append({"role": m.role, "content": m.content})
+
+    invoke_url = f"{base_url.rstrip('/')}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": request_data.temperature if request_data.temperature is not None else 1.0,
+        "top_p": request_data.top_p if request_data.top_p is not None else 0.95,
+        "stream": False,
+    }
+
+    try:
+        # Run the blocking requests call in a thread so we don't block the event loop
+        loop = asyncio.get_event_loop()
+        resp = await loop.run_in_executor(
+            None,
+            lambda: http_requests.post(invoke_url, headers=headers, json=payload, timeout=120),
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        assistant_content = (
+            data.get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "")
+        )
+
+        # Yield chat_id first so the frontend knows which chat this belongs to
+        yield f"data: {json.dumps({'chat_id': chat_id})}\n\n"
+        # Yield the full content as a single delta so existing frontend SSE logic works
+        yield f"data: {json.dumps({'delta': assistant_content})}\n\n"
+        yield "data: [DONE]\n\n"
+
+        await db.add_message(chat_id, "assistant", assistant_content)
+
+    except Exception as e:
+        yield f"data: {json.dumps({'error': f'MiniMax API Error: {str(e)}'})}\n\n"
 
 @app.post("/api/chat")
 async def chat_endpoint(request_data: ChatRequest):
-    api_key = request_data.api_key or NVIDIA_API_KEY
-    if not api_key:
-        raise HTTPException(
-            status_code=400,
-            detail="NVIDIA API key is required. Set it in backend .env or frontend settings."
-        )
+    if not NVIDIA_API_KEY and not request_data.api_key:
+        raise HTTPException(status_code=400, detail="API key is required.")
+
+    chat_id = request_data.chat_id
+    if not chat_id:
+        chat_title = "New Chat"
+        if request_data.messages:
+            chat_title = request_data.messages[0].content[:40] + "..."
+        new_chat = await db.create_chat(chat_title)
+        chat_id = new_chat["_id"]
+
+    if request_data.messages:
+        last_msg = request_data.messages[-1]
+        await db.add_message(chat_id, last_msg.role, last_msg.content, request_data.file_ids)
 
     return StreamingResponse(
-        generate_stream(request_data),
+        generate_stream(request_data, chat_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -185,7 +335,6 @@ async def chat_endpoint(request_data: ChatRequest):
             "X-Accel-Buffering": "no"
         }
     )
-
 
 if __name__ == "__main__":
     import uvicorn

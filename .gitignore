@@ -9,10 +9,12 @@ dist/
 build/
 *.egg-info/
 
-# Environment files
+# Environment files — keep secrets out of git
 .env
 .env.local
 .env.*.local
+# Allow .env.production — it only sets VITE_BACKEND_URL="" (no secrets)
+!.env.production
 
 # IDE & OS files
 .vscode/

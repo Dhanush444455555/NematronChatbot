@@ -29,22 +29,88 @@ export async function fetchAvailableModels(backendUrl = DEFAULT_BACKEND_URL) {
   }
 }
 
+export async function fetchChats(backendUrl = DEFAULT_BACKEND_URL) {
+  try {
+    const res = await fetch(`${backendUrl}/api/chats`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.chats || [];
+  } catch (err) {
+    console.error("Error fetching chats:", err);
+    return [];
+  }
+}
+
+export async function fetchChat(chatId, backendUrl = DEFAULT_BACKEND_URL) {
+  try {
+    const res = await fetch(`${backendUrl}/api/chats/${chatId}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (err) {
+    console.error("Error fetching chat:", err);
+    return null;
+  }
+}
+
+export async function renameChat(chatId, title, backendUrl = DEFAULT_BACKEND_URL) {
+  try {
+    const res = await fetch(`${backendUrl}/api/chats/${chatId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title })
+    });
+    return res.ok;
+  } catch (err) {
+    console.error("Error renaming chat:", err);
+    return false;
+  }
+}
+
+export async function deleteChat(chatId, backendUrl = DEFAULT_BACKEND_URL) {
+  try {
+    const res = await fetch(`${backendUrl}/api/chats/${chatId}`, {
+      method: "DELETE"
+    });
+    return res.ok;
+  } catch (err) {
+    console.error("Error deleting chat:", err);
+    return false;
+  }
+}
+
+export async function uploadFile(file, backendUrl = DEFAULT_BACKEND_URL) {
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`${backendUrl}/api/upload`, {
+      method: "POST",
+      body: formData
+    });
+    if (!res.ok) throw new Error("Upload failed");
+    return await res.json();
+  } catch (err) {
+    console.error("Error uploading file:", err);
+    return null;
+  }
+}
+
 /**
  * Stream chat completions from FastAPI backend using SSE reader.
- * Supports NVIDIA NIM API thinking/reasoning tokens.
  */
 export async function streamChatCompletion({
+  chatId,
   messages,
+  fileIds = [],
   model,
   systemPrompt,
   temperature = 1.0,
-  maxTokens = 16384,
   topP = 0.95,
   enableThinking = true,
-  reasoningBudget = 16384,
+  reasoningBudget = 32768,
   apiKey = "",
   baseUrl = "",
   backendUrl = DEFAULT_BACKEND_URL,
+  onChatId,
   onChunk,
   onThinkingChunk,
   onThinkingStart,
@@ -60,11 +126,12 @@ export async function streamChatCompletion({
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
+        chat_id: chatId,
         messages,
+        file_ids: fileIds,
         model,
         system_prompt: systemPrompt,
         temperature: parseFloat(temperature),
-        max_tokens: parseInt(maxTokens, 10),
         top_p: parseFloat(topP),
         enable_thinking: enableThinking,
         reasoning_budget: parseInt(reasoningBudget, 10),
@@ -108,6 +175,10 @@ export async function streamChatCompletion({
             if (onError) onError(parsed.error);
             return;
           }
+          
+          if (parsed.chat_id && onChatId) {
+            onChatId(parsed.chat_id);
+          }
 
           // Thinking/reasoning events
           if (parsed.thinking_start && onThinkingStart) {
@@ -123,7 +194,7 @@ export async function streamChatCompletion({
             onChunk(parsed.delta);
           }
         } catch (e) {
-          if (dataStr && onChunk) onChunk(dataStr);
+          // If JSON parse fails, it might just be a string delta in some edge cases
         }
       }
     }
