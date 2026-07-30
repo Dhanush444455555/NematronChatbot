@@ -258,6 +258,7 @@ export default function App() {
           backendHealthy={backendHealthy}
           onToggleMobileSidebar={() => setIsMobileSidebarOpen(prev => !prev)}
           onOpenSettings={() => setIsSettingsOpen(true)}
+          onNewChat={handleNewChat}
         />
 
         <div className="chat-messages-container">

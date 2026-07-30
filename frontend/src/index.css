@@ -1151,3 +1151,193 @@ body {
   scroll-behavior: smooth;
 }
 
+/* ==========================================
+   MOBILE & RESPONSIVE LAYOUT STYLES
+   ========================================== */
+
+/* Mobile Backdrop for Sidebar */
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 90;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.sidebar-backdrop.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Header Action Buttons */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.new-chat-header-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  background: var(--accent-gradient);
+  color: white;
+  border: none;
+  font-family: var(--font-main);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+  transition: all 0.15s ease;
+}
+
+.new-chat-header-btn:hover {
+  opacity: 0.95;
+  transform: translateY(-1px);
+}
+
+.mobile-menu-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.mobile-menu-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.mobile-close-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.header-title-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow: hidden;
+}
+
+/* ------------------------------------------
+   Mobile Viewport Breakpoint (max-width: 768px)
+   ------------------------------------------ */
+@media (max-width: 768px) {
+  .app-container {
+    flex-direction: column;
+    height: 100dvh;
+  }
+
+  /* Slide-over Drawer Sidebar on Mobile */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 82vw;
+    max-width: 320px;
+    height: 100%;
+    z-index: 100;
+    transform: translateX(-100%);
+    box-shadow: 10px 0 30px rgba(0, 0, 0, 0.6);
+    background: #090d16;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .mobile-close-btn {
+    display: flex;
+  }
+
+  /* Compact Header for Mobile */
+  .top-header {
+    height: 54px;
+    padding: 0 10px;
+  }
+
+  .header-title-group {
+    gap: 8px;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .header-title {
+    font-size: 0.92rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 130px;
+  }
+
+  .model-badge {
+    display: none;
+  }
+
+  .header-btn-text {
+    display: none;
+  }
+
+  .mobile-menu-label {
+    display: inline;
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+
+  .new-chat-header-btn {
+    padding: 7px 9px;
+  }
+
+  .settings-btn {
+    padding: 7px 9px !important;
+  }
+
+  .copy-btn {
+    padding: 7px 9px !important;
+  }
+
+  /* Quick cards 1-column on mobile */
+  .quick-prompts-grid {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  .prompt-card {
+    padding: 10px 12px !important;
+  }
+
+  /* Input area padding for mobile keyboard */
+  .chat-input-wrapper {
+    padding: 8px 10px 12px 10px;
+  }
+
+  .chat-input-box {
+    padding: 8px 10px;
+  }
+}
+
+

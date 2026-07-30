@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Sparkles, Trash2, Download, ShieldCheck, ShieldAlert, Menu } from 'lucide-react';
+import { Settings, Sparkles, Trash2, Download, ShieldCheck, ShieldAlert, Menu, Plus } from 'lucide-react';
 
 export default function Header({
   activeChatTitle,
@@ -7,6 +7,7 @@ export default function Header({
   backendHealthy,
   onToggleMobileSidebar,
   onOpenSettings,
+  onNewChat,
   onClearCurrentChat,
   onExportChat
 }) {
@@ -16,30 +17,46 @@ export default function Header({
     const parts = modelId.split('/');
     const name = parts[parts.length - 1]; // e.g. "nemotron-3-ultra-550b-a55b"
     const words = name.split('-');
-    // Keep first 3 meaningful words max
-    return words.slice(0, 3).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    return words.slice(0, 2).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   };
+
   return (
     <header className="top-header">
       <div className="header-title-group">
         <button 
           className="mobile-menu-btn" 
           onClick={onToggleMobileSidebar}
-          title="Open Menu"
+          title="Open Conversation History"
+          aria-label="Open History Menu"
         >
           <Menu size={20} />
+          <span className="mobile-menu-label">History</span>
         </button>
-        <h2 className="header-title">{activeChatTitle || "New Conversation"}</h2>
-        <div className="model-badge">
-          <Sparkles size={13} />
-          <span>{getModelLabel(currentModel)}</span>
+
+        <div className="header-title-container">
+          <h2 className="header-title">{activeChatTitle || "New Conversation"}</h2>
+          <div className="model-badge">
+            <Sparkles size={12} />
+            <span>{getModelLabel(currentModel)}</span>
+          </div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <div className={`status-badge ${!backendHealthy ? 'offline' : ''}`} style={!backendHealthy ? { color: '#f87171', background: 'rgba(248, 113, 113, 0.1)', borderColor: 'rgba(248, 113, 113, 0.2)' } : {}}>
+      <div className="header-actions">
+        {onNewChat && (
+          <button 
+            className="new-chat-header-btn"
+            onClick={onNewChat}
+            title="Start New Conversation"
+          >
+            <Plus size={17} />
+            <span className="header-btn-text">New Chat</span>
+          </button>
+        )}
+
+        <div className={`status-badge ${!backendHealthy ? 'offline' : ''}`}>
           {backendHealthy ? <ShieldCheck size={14} /> : <ShieldAlert size={14} />}
-          <span>{backendHealthy ? 'Backend Connected' : 'Backend Disconnected'}</span>
+          <span className="header-btn-text">{backendHealthy ? 'Online' : 'Offline'}</span>
         </div>
 
         {onExportChat && (
@@ -47,10 +64,9 @@ export default function Header({
             className="copy-btn"
             onClick={onExportChat} 
             title="Export Chat Markdown"
-            style={{ padding: '6px 10px' }}
           >
             <Download size={15} />
-            <span>Export</span>
+            <span className="header-btn-text">Export</span>
           </button>
         )}
 
@@ -59,20 +75,19 @@ export default function Header({
             className="copy-btn" 
             onClick={onClearCurrentChat} 
             title="Clear Chat Messages"
-            style={{ padding: '6px 10px' }}
           >
             <Trash2 size={15} />
-            <span>Clear</span>
+            <span className="header-btn-text">Clear</span>
           </button>
         )}
 
         <button 
           className="settings-btn" 
           onClick={onOpenSettings}
-          style={{ padding: '6px 12px' }}
+          title="API & Settings"
         >
           <Settings size={16} />
-          <span>Settings</span>
+          <span className="header-btn-text">Settings</span>
         </button>
       </div>
     </header>
