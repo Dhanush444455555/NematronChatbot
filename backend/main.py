@@ -1,6 +1,10 @@
 import os
 import json
 import asyncio
+import hashlib
+import hmac
+import secrets
+import base64
 import requests as http_requests
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any
@@ -8,11 +12,10 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, Bac
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
-from passlib.context import CryptContext
-from jose import JWTError, jwt
+import jwt as pyjwt
 
 import database as db
 from extractors import process_file_upload
@@ -43,29 +46,37 @@ EMBED_MODEL = os.getenv("EMBED_MODEL", "nvidia/nemotron-3-embed-1b")
 # MiniMax M3 uses a separate API key on the same NVIDIA NIM base URL
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "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")
 
-# ── Auth Config ──────────────────────────────────────────────────────────────
+# ── Auth Config (stdlib only — no native compilation needed) ─────────────────
 JWT_SECRET = os.getenv("JWT_SECRET", "nematron-super-secret-jwt-key-change-in-prod-2024")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_DAYS = 30
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    """PBKDF2-HMAC-SHA256 — stdlib, secure, no native deps."""
+    salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 260000)
+    return salt + ":" + base64.b64encode(dk).decode()
 
-def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+def verify_password(plain: str, stored: str) -> bool:
+    try:
+        salt, b64_dk = stored.split(":", 1)
+        dk_stored = base64.b64decode(b64_dk)
+        dk_check = hashlib.pbkdf2_hmac("sha256", plain.encode(), salt.encode(), 260000)
+        return hmac.compare_digest(dk_stored, dk_check)
+    except Exception:
+        return False
 
 def create_token(user_id: str, email: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(days=JWT_EXPIRE_DAYS)
-    return jwt.encode({"sub": user_id, "email": email, "exp": expire}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return pyjwt.encode({"sub": user_id, "email": email, "exp": expire}, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     if not credentials:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
-        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = pyjwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id = payload.get("sub")
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
@@ -73,7 +84,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
         return user
-    except JWTError:
+    except pyjwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 MODEL_API_KEY_MAP: dict = {

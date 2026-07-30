@@ -9,7 +9,13 @@ async function apiAuth(endpoint, body) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  const data = await res.json();
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    const text = await res.text().catch(() => 'Server error');
+    throw new Error(`Server error: ${text.slice(0, 100)}`);
+  }
   if (!res.ok) throw new Error(data.detail || 'Something went wrong');
   return data;
 }
