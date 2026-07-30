@@ -180,7 +180,7 @@ export default function Sidebar({
         {authUser && (
           <div 
             onClick={() => {
-              if (authUser.is_admin || authUser.email?.toLowerCase() === '1si24ci013@sit.ac.in') {
+              if (onOpenAdmin && (authUser.is_admin || authUser.email?.toLowerCase() === '1si24ci013@sit.ac.in')) {
                 onOpenAdmin();
               }
             }}

@@ -89,18 +89,6 @@ export default function Header({
           <Settings size={16} />
           <span className="header-btn-text">Settings</span>
         </button>
-
-        {onOpenAdmin && (
-          <button 
-            className="settings-btn" 
-            onClick={onOpenAdmin}
-            title="Registered Users Admin Panel"
-            style={{ border: '1px solid rgba(99, 102, 241, 0.4)', background: 'rgba(99, 102, 241, 0.12)' }}
-          >
-            <ShieldCheck size={16} color="var(--accent-indigo)" />
-            <span className="header-btn-text" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Users</span>
-          </button>
-        )}
       </div>
     </header>
   );
