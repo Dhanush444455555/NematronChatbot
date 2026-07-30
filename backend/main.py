@@ -39,12 +39,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "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")
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "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")
 NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
-DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "nvidia/nemotron-3-ultra-550b-a55b")
-EMBED_MODEL = os.getenv("EMBED_MODEL", "nvidia/nemotron-3-embed-1b")
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "nvidia/llama-3.1-nemotron-70b-instruct")
+EMBED_MODEL = os.getenv("EMBED_MODEL", "nvidia/nv-embedqa-e5-v5")
 # MiniMax M3 uses a separate API key on the same NVIDIA NIM base URL
-MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "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")
+MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "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")
 
 # ── Auth Config (stdlib only — no native compilation needed) ─────────────────
 JWT_SECRET = os.getenv("JWT_SECRET", "nematron-super-secret-jwt-key-change-in-prod-2024")
