@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, MessageSquare, Trash2, Edit2, Settings, Bot, Search, X } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, Edit2, Settings, Bot, Search, X, LogOut, User } from 'lucide-react';
 
 export default function Sidebar({
   chats,
@@ -12,7 +12,9 @@ export default function Sidebar({
   onRenameChat,
   onOpenSettings,
   currentModel,
-  onModelChange
+  onModelChange,
+  authUser,
+  onLogout
 }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [editingId, setEditingId] = useState(null);
@@ -173,6 +175,50 @@ export default function Sidebar({
           <Settings size={16} />
           <span>API & Engine Settings</span>
         </button>
+
+        {authUser && (
+          <div style={{
+            marginTop: '8px',
+            padding: '10px 12px',
+            background: 'rgba(255,255,255,0.03)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 'var(--radius-md)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
+          }}>
+            <div style={{
+              width: '30px', height: '30px',
+              borderRadius: '50%',
+              background: 'var(--accent-gradient)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              <User size={14} color="white" />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {authUser.name || 'User'}
+              </div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {authUser.email}
+              </div>
+            </div>
+            <button
+              onClick={onLogout}
+              title="Sign out"
+              style={{
+                background: 'none', border: 'none', color: 'var(--text-muted)',
+                cursor: 'pointer', padding: '4px', borderRadius: '6px',
+                display: 'flex', alignItems: 'center', transition: 'color 0.2s'
+              }}
+              onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+            >
+              <LogOut size={15} />
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   );

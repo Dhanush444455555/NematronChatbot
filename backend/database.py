@@ -17,6 +17,7 @@ if _USE_MONGO:
         messages_col = _db.get_collection("messages")
         memories_col = _db.get_collection("memories")
         files_col    = _db.get_collection("files")
+        users_col    = _db.get_collection("users")
     except Exception as e:
         print(f"[DB] MongoDB unavailable ({e}), using in-memory store.")
         _USE_MONGO = False
@@ -26,6 +27,7 @@ _chats:    Dict[str, Dict] = {}   # id -> chat doc
 _messages: Dict[str, List] = {}   # chat_id -> [msg, ...]
 _memories: List[Dict]      = []
 _files:    Dict[str, Dict] = {}   # id -> file doc
+_users:    Dict[str, Dict] = {}   # email -> user doc
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -206,3 +208,56 @@ async def get_file_record(file_id: str) -> Optional[Dict[str, Any]]:
         except Exception:
             return None
     return dict(_files[file_id]) if file_id in _files else None
+
+# ════════════════════════════════════════════════════════════════════════════
+#  USERS
+# ════════════════════════════════════════════════════════════════════════════
+async def create_user(email: str, hashed_password: str, name: str = "") -> Dict[str, Any]:
+    if _USE_MONGO:
+        try:
+            from bson import ObjectId
+            doc = {
+                "email": email.lower().strip(),
+                "hashed_password": hashed_password,
+                "name": name,
+                "created_at": datetime.now(timezone.utc)
+            }
+            res = await users_col.insert_one(doc)
+            doc["_id"] = res.inserted_id
+            return _fmt(doc)
+        except Exception as e:
+            raise e
+    # in-memory
+    uid = _new_id()
+    doc = {
+        "_id": uid,
+        "email": email.lower().strip(),
+        "hashed_password": hashed_password,
+        "name": name,
+        "created_at": _now()
+    }
+    _users[email.lower().strip()] = doc
+    return dict(doc)
+
+async def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    if _USE_MONGO:
+        try:
+            doc = await users_col.find_one({"email": email.lower().strip()})
+            return _fmt(doc) if doc else None
+        except Exception:
+            return None
+    return dict(_users[email.lower().strip()]) if email.lower().strip() in _users else None
+
+async def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
+    if _USE_MONGO:
+        try:
+            from bson import ObjectId
+            doc = await users_col.find_one({"_id": ObjectId(user_id)})
+            return _fmt(doc) if doc else None
+        except Exception:
+            return None
+    # in-memory: search by _id
+    for u in _users.values():
+        if u["_id"] == user_id:
+            return dict(u)
+    return None

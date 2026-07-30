@@ -2,13 +2,17 @@ import os
 import json
 import asyncio
 import requests as http_requests
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel, EmailStr
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
+from passlib.context import CryptContext
+from jose import JWTError, jwt
 
 import database as db
 from extractors import process_file_upload
@@ -39,6 +43,39 @@ EMBED_MODEL = os.getenv("EMBED_MODEL", "nvidia/nemotron-3-embed-1b")
 # MiniMax M3 uses a separate API key on the same NVIDIA NIM base URL
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "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")
 
+# ── Auth Config ──────────────────────────────────────────────────────────────
+JWT_SECRET = os.getenv("JWT_SECRET", "nematron-super-secret-jwt-key-change-in-prod-2024")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_DAYS = 30
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+security = HTTPBearer(auto_error=False)
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return pwd_context.verify(plain, hashed)
+
+def create_token(user_id: str, email: str) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(days=JWT_EXPIRE_DAYS)
+    return jwt.encode({"sub": user_id, "email": email, "exp": expire}, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        user = await db.get_user_by_id(user_id)
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        return user
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
 MODEL_API_KEY_MAP: dict = {
     "minimaxai/minimax-m3": MINIMAX_API_KEY,
 }
@@ -68,6 +105,15 @@ class ChatRequest(BaseModel):
 
 class ChatRenameRequest(BaseModel):
     title: str
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    name: Optional[str] = ""
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
 
 AVAILABLE_MODELS = [
     {
@@ -107,6 +153,62 @@ def health_check():
 @app.get("/api/models")
 def get_models():
     return {"models": AVAILABLE_MODELS}
+
+# --- AUTH API ---
+@app.post("/api/auth/register")
+async def register(request: RegisterRequest):
+    email = request.email.lower().strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Valid email required")
+    if not request.password or len(request.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    existing = await db.get_user_by_email(email)
+    if existing:
+        raise HTTPException(status_code=409, detail="Email already registered")
+
+    hashed = hash_password(request.password)
+    user = await db.create_user(email, hashed, request.name or "")
+    token = create_token(user["_id"], email)
+
+    return {
+        "token": token,
+        "user": {
+            "id": user["_id"],
+            "email": user["email"],
+            "name": user.get("name", "")
+        }
+    }
+
+@app.post("/api/auth/login")
+async def login(request: LoginRequest):
+    email = request.email.lower().strip()
+    user = await db.get_user_by_email(email)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    if not verify_password(request.password, user["hashed_password"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    token = create_token(user["_id"], email)
+    return {
+        "token": token,
+        "user": {
+            "id": user["_id"],
+            "email": user["email"],
+            "name": user.get("name", "")
+        }
+    }
+
+@app.get("/api/auth/me")
+async def get_me(current_user: dict = Depends(get_current_user)):
+    return {
+        "user": {
+            "id": current_user["_id"],
+            "email": current_user["email"],
+            "name": current_user.get("name", "")
+        }
+    }
 
 # --- CHAT MANAGEMENT API ---
 @app.get("/api/chats")

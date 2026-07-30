@@ -5,6 +5,7 @@ import ChatMessage from './components/ChatMessage';
 import ChatInput from './components/ChatInput';
 import SettingsModal from './components/SettingsModal';
 import FloatingHistoryButton from './components/FloatingHistoryButton';
+import LoginPage from './components/LoginPage';
 import {
   loadSettings,
   saveSettings,
@@ -22,7 +23,10 @@ import {
 } from './services/api';
 import { Bot } from 'lucide-react';
 
-export default function App() {
+const API_BASE = import.meta.env.VITE_BACKEND_URL || '';
+
+// ── Inner chat app (shown only when logged in) ──────────────────────────────
+function ChatApp({ authUser, onLogout }) {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [chats, setChats] = useState([]);
   const [activeChatId, setActiveChatId] = useState(null);
@@ -122,7 +126,6 @@ export default function App() {
     const text = (textToSend || input).trim();
     if ((!text && uploadedFileIds.length === 0) || isStreaming) return;
 
-    // Optimistically add user message
     const userMessage = {
       _id: `msg_${Date.now()}`,
       role: 'user',
@@ -132,7 +135,6 @@ export default function App() {
 
     setActiveMessages(prev => [...prev, userMessage]);
 
-    // Optimistically add assistant thinking placeholder
     const assistantMessageId = `msg_assistant_${Date.now()}`;
     const assistantMessage = {
       _id: assistantMessageId,
@@ -172,7 +174,6 @@ export default function App() {
       onChatId: (newChatId) => {
         if (!activeChatId) {
           setActiveChatId(newChatId);
-          // Optimistically add to sidebar
           setChats(prev => [{ _id: newChatId, title: text.slice(0,30) || "New Conversation" }, ...prev]);
         }
       },
@@ -212,7 +213,6 @@ export default function App() {
 
       onComplete: () => {
         setIsStreaming(false);
-        // Refresh chats to get updated titles/timestamps
         loadAllChats();
       }
     });
@@ -255,6 +255,8 @@ export default function App() {
           setSettings(updated);
           saveSettings(updated);
         }}
+        authUser={authUser}
+        onLogout={onLogout}
       />
 
       <main className="main-workspace">
@@ -265,6 +267,8 @@ export default function App() {
           onToggleMobileSidebar={() => setIsMobileSidebarOpen(prev => !prev)}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onNewChat={handleNewChat}
+          authUser={authUser}
+          onLogout={onLogout}
         />
 
         <div className="chat-messages-container">
@@ -305,4 +309,67 @@ export default function App() {
       />
     </div>
   );
+}
+
+// ── Root App: handles auth gate ──────────────────────────────────────────────
+export default function App() {
+  const [authUser, setAuthUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem('nematron_token');
+    const userStr = localStorage.getItem('nematron_user');
+    if (token && userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        fetch(`${API_BASE}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }).then(res => {
+          if (res.ok) {
+            setAuthUser(user);
+          } else {
+            localStorage.removeItem('nematron_token');
+            localStorage.removeItem('nematron_user');
+          }
+          setAuthChecked(true);
+        }).catch(() => {
+          // Network error — trust cached session
+          setAuthUser(user);
+          setAuthChecked(true);
+        });
+      } catch {
+        setAuthChecked(true);
+      }
+    } else {
+      setAuthChecked(true);
+    }
+  }, []);
+
+  const handleLogin = (user) => setAuthUser(user);
+
+  const handleLogout = () => {
+    localStorage.removeItem('nematron_token');
+    localStorage.removeItem('nematron_user');
+    setAuthUser(null);
+  };
+
+  if (!authChecked) {
+    // Minimal splash while verifying token
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        height: '100vh', background: '#090d16', color: '#6366f1',
+        fontSize: '1.1rem', fontFamily: 'Outfit, sans-serif', gap: '12px'
+      }}>
+        <Bot size={28} />
+        Loading...
+      </div>
+    );
+  }
+
+  if (!authUser) {
+    return <LoginPage onLogin={handleLogin} />;
+  }
+
+  return <ChatApp authUser={authUser} onLogout={handleLogout} />;
 }
