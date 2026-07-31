@@ -143,6 +143,166 @@ function ChatApp({ authUser, onLogout }) {
     setIsStreaming(false);
   };
 
+  const handleClearCurrentChat = async () => {
+    if (activeChatId) {
+      await handleDeleteChat(activeChatId);
+    } else {
+      setActiveMessages([]);
+    }
+  };
+
+  const handleExportPDF = () => {
+    if (!activeMessages || activeMessages.length === 0) return;
+    const title = activeChatTitle || 'Nematron_Chat';
+    
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${title} - Nematron AI Export</title>
+        <style>
+          * { box-sizing: border-box; }
+          body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            padding: 40px; 
+            color: #0f172a; 
+            line-height: 1.6;
+            max-width: 850px;
+            margin: 0 auto;
+            background: #ffffff;
+          }
+          .header { 
+            text-align: center; 
+            border-bottom: 2px solid #6366f1; 
+            padding-bottom: 16px; 
+            margin-bottom: 30px; 
+          }
+          .header h1 { 
+            margin: 0; 
+            color: #4f46e5; 
+            font-size: 24px; 
+            font-weight: 700;
+          }
+          .header p { 
+            color: #64748b; 
+            font-size: 13px; 
+            margin-top: 6px; 
+          }
+          .message { 
+            margin-bottom: 20px; 
+            padding: 16px; 
+            border-radius: 8px; 
+            page-break-inside: avoid;
+          }
+          .user { 
+            background: #f1f5f9; 
+            border-left: 4px solid #3b82f6; 
+          }
+          .assistant { 
+            background: #f8fafc; 
+            border-left: 4px solid #8b5cf6; 
+            border: 1px solid #e2e8f0;
+            border-left: 4px solid #8b5cf6;
+          }
+          .role { 
+            font-weight: 700; 
+            font-size: 12px; 
+            text-transform: uppercase; 
+            letter-spacing: 0.5px; 
+            margin-bottom: 8px; 
+          }
+          .user .role { color: #2563eb; }
+          .assistant .role { color: #7c3aed; }
+          .content {
+            font-size: 14px;
+            white-space: pre-wrap;
+            word-break: break-word;
+          }
+          pre { 
+            background: #0f172a; 
+            color: #f8fafc; 
+            padding: 14px; 
+            border-radius: 6px; 
+            overflow-x: auto; 
+            font-family: 'Courier New', Courier, monospace; 
+            font-size: 13px;
+          }
+          code { 
+            font-family: monospace; 
+            background: #e2e8f0; 
+            padding: 2px 6px; 
+            border-radius: 4px; 
+            font-size: 13px;
+          }
+          pre code { background: none; padding: 0; color: inherit; }
+          @media print { 
+            body { padding: 0; } 
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>🤖 Nematron AI Export</h1>
+          <p>Title: <strong>${title}</strong> | Model: <strong>${settings.model}</strong> | Date: ${new Date().toLocaleString()}</p>
+        </div>
+        ${activeMessages.map(m => `
+          <div class="message ${m.role}">
+            <div class="role">${m.role === 'user' ? '👤 You' : '🤖 Nematron AI'}</div>
+            <div class="content">${m.content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+          </div>
+        `).join('')}
+      </body>
+      </html>
+    `;
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 400);
+  };
+
+  const handleExportMarkdown = () => {
+    if (!activeMessages || activeMessages.length === 0) return;
+    const title = activeChatTitle || 'Nematron_Chat';
+    let md = `# ${title}\n*Exported from Nematron AI on ${new Date().toLocaleString()}*\n*Model: ${settings.model}*\n\n---\n\n`;
+    
+    activeMessages.forEach(m => {
+      const sender = m.role === 'user' ? '### 👤 You' : '### 🤖 Nematron AI';
+      md += `${sender}\n\n${m.content}\n\n---\n\n`;
+    });
+
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_export.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportTXT = () => {
+    if (!activeMessages || activeMessages.length === 0) return;
+    const title = activeChatTitle || 'Nematron_Chat';
+    let txt = `========================================\nNEMATRON AI CONVERSATION EXPORT\nTitle: ${title}\nModel: ${settings.model}\nDate: ${new Date().toLocaleString()}\n========================================\n\n`;
+    
+    activeMessages.forEach(m => {
+      const sender = m.role === 'user' ? '[YOU]' : '[NEMATRON AI]';
+      txt += `${sender}\n${m.content}\n\n----------------------------------------\n\n`;
+    });
+
+    const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_export.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleSendMessage = async (textToSend, uploadedFileIds = []) => {
     const text = (textToSend || input).trim();
     if ((!text && uploadedFileIds.length === 0) || isStreaming) return;
@@ -296,6 +456,11 @@ function ChatApp({ authUser, onLogout }) {
           onToggleMobileSidebar={() => setIsMobileSidebarOpen(prev => !prev)}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onNewChat={handleNewChat}
+          onClearCurrentChat={handleClearCurrentChat}
+          onExportPDF={handleExportPDF}
+          onExportMarkdown={handleExportMarkdown}
+          onExportTXT={handleExportTXT}
+          hasMessages={activeMessages && activeMessages.length > 0}
           authUser={authUser}
           onLogout={onLogout}
         />
