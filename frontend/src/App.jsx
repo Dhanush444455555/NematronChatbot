@@ -348,17 +348,28 @@ export default function App() {
         const user = JSON.parse(userStr);
         fetch(`${API_BASE}/api/auth/me`, {
           headers: { Authorization: `Bearer ${token}` }
-        }).then(res => {
+        }).then(async res => {
           if (res.ok) {
-            setAuthUser(user);
-          } else {
+            const data = await res.json().catch(() => null);
+            if (data && data.user) {
+              setAuthUser(data.user);
+              localStorage.setItem('nematron_user', JSON.stringify(data.user));
+            } else {
+              setAuthUser(user);
+            }
+          } else if (res.status === 401) {
+            // Token explicitly invalid — clear local auth
             localStorage.removeItem('nematron_token');
             localStorage.removeItem('nematron_user');
+            setAuthUser(null);
+          } else {
+            // Temporary backend status — keep user logged in locally
+            setAuthUser(user);
           }
-          setAuthChecked(true);
         }).catch(() => {
-          // Network error — trust cached session
+          // Network or server offline — trust cached local session
           setAuthUser(user);
+        }).finally(() => {
           setAuthChecked(true);
         });
       } catch {
@@ -369,7 +380,11 @@ export default function App() {
     }
   }, []);
 
-  const handleLogin = (user) => setAuthUser(user);
+  const handleLogin = (user, token) => {
+    if (token) localStorage.setItem('nematron_token', token);
+    if (user) localStorage.setItem('nematron_user', JSON.stringify(user));
+    setAuthUser(user);
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('nematron_token');

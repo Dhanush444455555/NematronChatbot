@@ -49,24 +49,33 @@ MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "nvapi-9Smd9-yMM0iUKi_FPF2vUr4tzK
 # ── Auth Config (stdlib only — no native compilation needed) ─────────────────
 JWT_SECRET = os.getenv("JWT_SECRET", "nematron-super-secret-jwt-key-change-in-prod-2024")
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_DAYS = 30
+JWT_EXPIRE_DAYS = 365
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "1si24ci013@sit.ac.in").lower().strip()
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Dhanu@555")
 
 security = HTTPBearer(auto_error=False)
 
+# Reduced to 100k iterations — still secure, but won't time-out on serverless cold starts
+_PBKDF2_ITERS = 100_000
+
 def hash_password(password: str) -> str:
     """PBKDF2-HMAC-SHA256 — stdlib, secure, no native deps."""
     salt = secrets.token_hex(16)
-    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 260000)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), _PBKDF2_ITERS)
     return salt + ":" + base64.b64encode(dk).decode()
 
 def verify_password(plain: str, stored: str) -> bool:
+    """Verify password — handles both 100k and legacy 260k iteration hashes."""
     try:
         salt, b64_dk = stored.split(":", 1)
         dk_stored = base64.b64decode(b64_dk)
-        dk_check = hashlib.pbkdf2_hmac("sha256", plain.encode(), salt.encode(), 260000)
-        return hmac.compare_digest(dk_stored, dk_check)
+        # Try current iteration count first
+        dk_check = hashlib.pbkdf2_hmac("sha256", plain.encode(), salt.encode(), _PBKDF2_ITERS)
+        if hmac.compare_digest(dk_stored, dk_check):
+            return True
+        # Fallback: try old 260k iteration count (legacy hashes)
+        dk_check_legacy = hashlib.pbkdf2_hmac("sha256", plain.encode(), salt.encode(), 260000)
+        return hmac.compare_digest(dk_stored, dk_check_legacy)
     except Exception:
         return False
 
@@ -268,29 +277,42 @@ async def get_admin_users(current_user: dict = Depends(get_current_user)):
         })
     return {"users": user_list, "total": len(user_list)}
 
-# --- CHAT MANAGEMENT API ---
+# --- CHAT MANAGEMENT API (user-scoped — each user sees only their own chats) ---
 @app.get("/api/chats")
-async def get_chats():
-    chats = await db.get_chats()
+async def get_chats(current_user: dict = Depends(get_current_user)):
+    chats = await db.get_chats(user_id=current_user["_id"])
     return {"chats": chats}
 
 @app.get("/api/chats/{chat_id}")
-async def get_chat(chat_id: str):
+async def get_chat(chat_id: str, current_user: dict = Depends(get_current_user)):
     chat = await db.get_chat(chat_id)
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
+    # Only owner or admin can read
+    if chat.get("user_id") and chat["user_id"] != current_user["_id"] and current_user["email"].lower() != ADMIN_EMAIL:
+        raise HTTPException(status_code=403, detail="Access denied")
     messages = await db.get_messages(chat_id)
     return {"chat": chat, "messages": messages}
 
 @app.put("/api/chats/{chat_id}")
-async def rename_chat(chat_id: str, request: ChatRenameRequest):
+async def rename_chat(chat_id: str, request: ChatRenameRequest, current_user: dict = Depends(get_current_user)):
+    chat = await db.get_chat(chat_id)
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if chat.get("user_id") and chat["user_id"] != current_user["_id"] and current_user["email"].lower() != ADMIN_EMAIL:
+        raise HTTPException(status_code=403, detail="Access denied")
     success = await db.update_chat_title(chat_id, request.title)
     if not success:
         raise HTTPException(status_code=404, detail="Chat not found or could not be updated")
     return {"success": True}
 
 @app.delete("/api/chats/{chat_id}")
-async def delete_chat(chat_id: str):
+async def delete_chat(chat_id: str, current_user: dict = Depends(get_current_user)):
+    chat = await db.get_chat(chat_id)
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if chat.get("user_id") and chat["user_id"] != current_user["_id"] and current_user["email"].lower() != ADMIN_EMAIL:
+        raise HTTPException(status_code=403, detail="Access denied")
     success = await db.delete_chat(chat_id)
     if not success:
         raise HTTPException(status_code=404, detail="Chat not found or could not be deleted")
@@ -352,13 +374,18 @@ async def generate_stream(request_data: ChatRequest, chat_id: str):
         }
 
     try:
-        completion = await client.chat.completions.create(
-            model=request_data.model or DEFAULT_MODEL,
-            messages=messages,
-            temperature=request_data.temperature if request_data.temperature is not None else 1.0,
-            top_p=request_data.top_p if request_data.top_p is not None else 0.95,
-            extra_body=extra_body if extra_body else None,
-            stream=True
+        import asyncio as _asyncio
+        completion = await _asyncio.wait_for(
+            client.chat.completions.create(
+                model=request_data.model or DEFAULT_MODEL,
+                messages=messages,
+                temperature=request_data.temperature if request_data.temperature is not None else 0.7,
+                top_p=request_data.top_p if request_data.top_p is not None else 0.95,
+                extra_body=extra_body if extra_body else None,
+                stream=True,
+                max_tokens=2048
+            ),
+            timeout=55
         )
 
         in_thinking = False
@@ -399,7 +426,15 @@ async def generate_stream(request_data: ChatRequest, chat_id: str):
         await db.add_message(chat_id, "assistant", final_content)
 
     except Exception as e:
-        yield f"data: {json.dumps({'error': f'API Error: {str(e)}'})}\n\n"
+        err_str = str(e)
+        if "timeout" in err_str.lower() or "TimeoutError" in err_str:
+            yield f"data: {json.dumps({'error': 'Request timed out. Please try again with a shorter message.'})}\n\n"
+        elif "401" in err_str or "Unauthorized" in err_str:
+            yield f"data: {json.dumps({'error': 'Invalid API key. Please check your NVIDIA API key in Settings.'})}\n\n"
+        elif "Connection" in err_str or "connect" in err_str.lower():
+            yield f"data: {json.dumps({'error': 'Connection error. Please try again in a moment.'})}\n\n"
+        else:
+            yield f"data: {json.dumps({'error': f'API Error: {err_str[:200]}'})}\n\n"
 
 
 async def _generate_non_stream(
@@ -470,17 +505,23 @@ async def _generate_non_stream(
         yield f"data: {json.dumps({'error': f'MiniMax API Error: {str(e)}'})}\n\n"
 
 @app.post("/api/chat")
-async def chat_endpoint(request_data: ChatRequest):
+async def chat_endpoint(request_data: ChatRequest, current_user: dict = Depends(get_current_user)):
     if not NVIDIA_API_KEY and not request_data.api_key:
         raise HTTPException(status_code=400, detail="API key is required.")
 
+    user_id = current_user["_id"]
     chat_id = request_data.chat_id
     if not chat_id:
         chat_title = "New Chat"
         if request_data.messages:
             chat_title = request_data.messages[0].content[:40] + "..."
-        new_chat = await db.create_chat(chat_title)
+        new_chat = await db.create_chat(user_id=user_id, title=chat_title)
         chat_id = new_chat["_id"]
+    else:
+        # Verify the chat belongs to this user
+        existing = await db.get_chat(chat_id)
+        if existing and existing.get("user_id") and existing["user_id"] != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
 
     if request_data.messages:
         last_msg = request_data.messages[-1]

@@ -1,5 +1,10 @@
 const DEFAULT_BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
 
+function getAuthHeaders() {
+  const token = localStorage.getItem("nematron_token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 /**
  * Health check endpoint for Python backend
  */
@@ -31,7 +36,9 @@ export async function fetchAvailableModels(backendUrl = DEFAULT_BACKEND_URL) {
 
 export async function fetchChats(backendUrl = DEFAULT_BACKEND_URL) {
   try {
-    const res = await fetch(`${backendUrl}/api/chats`);
+    const res = await fetch(`${backendUrl}/api/chats`, {
+      headers: { ...getAuthHeaders() }
+    });
     if (!res.ok) return [];
     const data = await res.json();
     return data.chats || [];
@@ -43,7 +50,9 @@ export async function fetchChats(backendUrl = DEFAULT_BACKEND_URL) {
 
 export async function fetchChat(chatId, backendUrl = DEFAULT_BACKEND_URL) {
   try {
-    const res = await fetch(`${backendUrl}/api/chats/${chatId}`);
+    const res = await fetch(`${backendUrl}/api/chats/${chatId}`, {
+      headers: { ...getAuthHeaders() }
+    });
     if (!res.ok) return null;
     return await res.json();
   } catch (err) {
@@ -56,7 +65,7 @@ export async function renameChat(chatId, title, backendUrl = DEFAULT_BACKEND_URL
   try {
     const res = await fetch(`${backendUrl}/api/chats/${chatId}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
       body: JSON.stringify({ title })
     });
     return res.ok;
@@ -69,7 +78,8 @@ export async function renameChat(chatId, title, backendUrl = DEFAULT_BACKEND_URL
 export async function deleteChat(chatId, backendUrl = DEFAULT_BACKEND_URL) {
   try {
     const res = await fetch(`${backendUrl}/api/chats/${chatId}`, {
-      method: "DELETE"
+      method: "DELETE",
+      headers: { ...getAuthHeaders() }
     });
     return res.ok;
   } catch (err) {
@@ -84,6 +94,7 @@ export async function uploadFile(file, backendUrl = DEFAULT_BACKEND_URL) {
     formData.append("file", file);
     const res = await fetch(`${backendUrl}/api/upload`, {
       method: "POST",
+      headers: { ...getAuthHeaders() },
       body: formData
     });
     if (!res.ok) throw new Error("Upload failed");
@@ -123,7 +134,8 @@ export async function streamChatCompletion({
     const response = await fetch(`${backendUrl}/api/chat`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        ...getAuthHeaders()
       },
       body: JSON.stringify({
         chat_id: chatId,
