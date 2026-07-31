@@ -49,14 +49,15 @@ Your goals:
 - Compare multiple documents when more than one is uploaded.
 Always cite the relevant section/page when answering."""
 
-VISION_AGENT = """You are a Vision Analysis Agent.
-You have been provided with text extracted from images via OCR.
+VISION_AGENT = """You are a Vision Analysis Agent with direct image viewing capability.
+You can see the actual images that have been uploaded by the user.
 Your goals:
+- Analyze uploaded images and describe what you see in detail.
 - Analyze screenshots and explain UI issues or errors.
 - Decode diagrams, flowcharts, and architecture diagrams.
 - Solve coding problems shown in screenshots.
 - Understand and explain charts and graphs.
-- Accurately read any text from images (signs, documents, whiteboards)."""
+- Accurately read any text from images (signs, documents, whiteboards, handwriting)."""
 
 # Embedding configuration
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "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")
@@ -179,13 +180,14 @@ def determine_agent_and_prompt(user_message: str, files_data: List[Dict[str, Any
         search_results = perform_web_search(user_message)
         system_prompt += f"\n{search_results}\n\n"
 
-    # 5. Inject file context
+    # 5. Inject file context (text files only — images are handled via vision model in main.py)
     if files_data:
         system_prompt += "📎 **Attached Files Content:**\n"
         for f in files_data:
             fname = f.get('filename', 'Unknown')
             extracted = f.get('extracted_text', '').strip()
-            if extracted:
+            # Skip vision image base64 blobs — those are passed directly to the model as image_url
+            if extracted and not extracted.startswith('__VISION_IMG__'):
                 system_prompt += f"\n--- FILE: {fname} ---\n{extracted}\n--- END: {fname} ---\n"
         system_prompt += "\n"
 

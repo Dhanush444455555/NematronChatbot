@@ -84,7 +84,10 @@ function ChatApp({ authUser, onLogout }) {
   useEffect(() => {
     if (activeChatId) {
       saveActiveChatId(activeChatId);
-      loadActiveChatMessages(activeChatId);
+      // Don't reload from DB while streaming — it would wipe the live assistant bubble
+      if (!isStreaming) {
+        loadActiveChatMessages(activeChatId);
+      }
     } else {
       setActiveMessages([]);
     }
@@ -214,6 +217,13 @@ function ChatApp({ authUser, onLogout }) {
         ));
       },
 
+      onModelSwitched: (switchedModel) => {
+        // Backend auto-routed to vision model — update UI to reflect this
+        const updated = { ...settings, model: switchedModel };
+        setSettings(updated);
+        saveSettings(updated);
+      },
+
       onChunk: (chunk) => {
         setActiveMessages(prev => prev.map(m =>
           m._id === assistantMessageId ? { ...m, content: m.content + chunk } : m
@@ -317,6 +327,11 @@ function ChatApp({ authUser, onLogout }) {
           isStreaming={isStreaming}
           showQuickPrompts={activeMessages.length === 0}
           backendUrl={settings.backendUrl}
+          onImageAttached={() => {
+            if (!settings.model.includes('vision') && !settings.model.includes('minimax')) {
+              handleSaveSettings({ ...settings, model: 'meta/llama-3.2-90b-vision-instruct' });
+            }
+          }}
         />
       </main>
 

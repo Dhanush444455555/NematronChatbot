@@ -77,7 +77,8 @@ export default function ChatInput({
   onStopStreaming,
   isStreaming,
   showQuickPrompts,
-  backendUrl
+  backendUrl,
+  onImageAttached
 }) {
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -102,6 +103,11 @@ export default function ChatInput({
   };
 
   const processFiles = useCallback(async (files) => {
+    const hasImage = Array.from(files).some(f => f.type.startsWith('image/'));
+    if (hasImage && onImageAttached) {
+      onImageAttached();
+    }
+
     const newEntries = Array.from(files).map(f => ({
       id: `${f.name}-${Date.now()}-${Math.random()}`,
       file: f,

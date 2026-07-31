@@ -126,6 +126,7 @@ export async function streamChatCompletion({
   onThinkingChunk,
   onThinkingStart,
   onThinkingEnd,
+  onModelSwitched,
   onError,
   onComplete,
   signal
@@ -190,6 +191,11 @@ export async function streamChatCompletion({
           
           if (parsed.chat_id && onChatId) {
             onChatId(parsed.chat_id);
+          }
+
+          // Backend auto-switched to vision model
+          if (parsed.model_switched && onModelSwitched) {
+            onModelSwitched(parsed.model_switched);
           }
 
           // Thinking/reasoning events

@@ -70,7 +70,10 @@ export default function SettingsModal({ isOpen, onClose, settings, onSaveSetting
               value={formData.model}
               onChange={(e) => handleChange('model', e.target.value)}
             >
+              <option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B Instruct</option>
+              <option value="meta/llama-3.2-90b-vision-instruct">Llama 3.2 90B Vision</option>
               <option value="nvidia/nemotron-3-ultra-550b-a55b">Nemotron 3 Ultra 550B (Thinking)</option>
+              <option value="minimaxai/minimax-m3">MiniMax M3 (Vision)</option>
               <option value="nvidia/llama-3.1-nemotron-70b-instruct">Llama 3.1 Nemotron 70B</option>
               <option value="nvidia/mistral-nemo-12b-instruct">Mistral Nemo 12B</option>
             </select>

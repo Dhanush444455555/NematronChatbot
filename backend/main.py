@@ -39,12 +39,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "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")
+NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "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")
 NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
-DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "nvidia/llama-3.1-nemotron-70b-instruct")
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "meta/llama-3.3-70b-instruct")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nvidia/nv-embedqa-e5-v5")
 # MiniMax M3 uses a separate API key on the same NVIDIA NIM base URL
-MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "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")
+MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "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")
 
 # ── Auth Config (stdlib only — no native compilation needed) ─────────────────
 JWT_SECRET = os.getenv("JWT_SECRET", "nematron-super-secret-jwt-key-change-in-prod-2024")
@@ -138,6 +138,18 @@ class LoginRequest(BaseModel):
     password: str
 
 AVAILABLE_MODELS = [
+    {
+        "id": "meta/llama-3.3-70b-instruct",
+        "name": "Llama 3.3 70B Instruct",
+        "description": "Meta's highly capable Llama 3.3 model via NVIDIA NIM.",
+        "badge": "Popular 🔥"
+    },
+    {
+        "id": "meta/llama-3.2-90b-vision-instruct",
+        "name": "Llama 3.2 90B Vision",
+        "description": "Llama 3.2 90B Vision model with excellent multimodal capabilities.",
+        "badge": "Vision 👁️"
+    },
     {
         "id": "nvidia/nemotron-3-ultra-550b-a55b",
         "name": "Nemotron 3 Ultra 550B",
@@ -332,11 +344,47 @@ async def upload_file(file: UploadFile = File(...)):
 # Models that must use the plain requests fallback (no SSE streaming support)
 NON_STREAMING_MODELS = {"minimaxai/minimax-m3"}
 
+# Vision-capable models — used for auto-switching when images are attached
+VISION_MODELS = {
+    "meta/llama-3.2-90b-vision-instruct",
+    "minimaxai/minimax-m3",
+}
+DEFAULT_VISION_MODEL = "meta/llama-3.2-90b-vision-instruct"
+
 # --- CORE CHAT API ---
 async def generate_stream(request_data: ChatRequest, chat_id: str):
     model = request_data.model or DEFAULT_MODEL
     api_key = resolve_api_key(model, request_data.api_key or "")
     base_url = request_data.base_url or NVIDIA_BASE_URL
+
+    # Gather file data and memories EARLY so we can detect images for auto-routing
+    files_data = []
+    if request_data.file_ids:
+        for fid in request_data.file_ids:
+            f = await db.get_file_record(fid)
+            if f:
+                files_data.append(f)
+
+    memories = []
+
+    # ── Auto-detect images and switch to a vision model if needed ─────────────
+    vision_images = []
+    for f in files_data:
+        extracted = f.get('extracted_text', '').strip()
+        if extracted.startswith('__VISION_IMG__'):
+            try:
+                content_part, b64_part = extracted.split('||', 1)
+                content_type = content_part.replace('__VISION_IMG__', '')
+                b64 = b64_part.replace('__VISION_END__', '')
+                vision_images.append(f"data:{content_type};base64,{b64}")
+            except Exception as e:
+                print(f"Error parsing vision image: {e}")
+
+    auto_switched_model = None
+    if vision_images and model not in VISION_MODELS:
+        auto_switched_model = DEFAULT_VISION_MODEL
+        model = DEFAULT_VISION_MODEL
+        api_key = resolve_api_key(model, request_data.api_key or "")
 
     # ── MiniMax M3 (and similar) – plain HTTP, no streaming ──────────────────
     if model in NON_STREAMING_MODELS:
@@ -346,16 +394,6 @@ async def generate_stream(request_data: ChatRequest, chat_id: str):
 
     client = AsyncOpenAI(api_key=api_key, base_url=base_url)
 
-    # Gather file data and memories
-    files_data = []
-    if request_data.file_ids:
-        for fid in request_data.file_ids:
-            f = await db.get_file_record(fid)
-            if f:
-                files_data.append(f)
-                
-    memories = await db.get_all_memories()
-
     # Get the last user message
     user_msg_content = request_data.messages[-1].content if request_data.messages else ""
 
@@ -363,11 +401,22 @@ async def generate_stream(request_data: ChatRequest, chat_id: str):
     augmented_system_prompt = determine_agent_and_prompt(user_msg_content, files_data, memories)
 
     messages = [{"role": "system", "content": augmented_system_prompt}]
-    for m in request_data.messages:
-        messages.append({"role": m.role, "content": m.content})
+
+    for i, m in enumerate(request_data.messages):
+        # Inject images into the last user message
+        if i == len(request_data.messages) - 1 and m.role == "user" and vision_images:
+            content_list = [{"type": "text", "text": m.content}]
+            for img_url in vision_images:
+                content_list.append({
+                    "type": "image_url",
+                    "image_url": {"url": img_url}
+                })
+            messages.append({"role": m.role, "content": content_list})
+        else:
+            messages.append({"role": m.role, "content": m.content})
 
     extra_body = {}
-    if request_data.enable_thinking:
+    if request_data.enable_thinking and request_data.model and "nemotron-3-ultra" in request_data.model.lower():
         extra_body = {
             "chat_template_kwargs": {"enable_thinking": True},
             "reasoning_budget": request_data.reasoning_budget if request_data.reasoning_budget else 32768
@@ -377,7 +426,7 @@ async def generate_stream(request_data: ChatRequest, chat_id: str):
         import asyncio as _asyncio
         completion = await _asyncio.wait_for(
             client.chat.completions.create(
-                model=request_data.model or DEFAULT_MODEL,
+                model=model,
                 messages=messages,
                 temperature=request_data.temperature if request_data.temperature is not None else 0.7,
                 top_p=request_data.top_p if request_data.top_p is not None else 0.95,
@@ -391,8 +440,12 @@ async def generate_stream(request_data: ChatRequest, chat_id: str):
         full_assistant_content = ""
         full_thinking_content = ""
         
-        # We need to yield chat_id first so frontend knows
+        # Yield chat_id first so frontend knows
         yield f"data: {json.dumps({'chat_id': chat_id})}\n\n"
+
+        # Notify frontend if model was auto-switched for vision
+        if auto_switched_model:
+            yield f"data: {json.dumps({'model_switched': auto_switched_model})}\n\n"
 
         async for chunk in completion:
             if not chunk.choices:
@@ -454,13 +507,37 @@ async def _generate_non_stream(
             if f:
                 files_data.append(f)
 
-    memories = await db.get_all_memories()
+    memories = []
     user_msg_content = request_data.messages[-1].content if request_data.messages else ""
     augmented_system_prompt = determine_agent_and_prompt(user_msg_content, files_data, memories)
 
     messages = [{"role": "system", "content": augmented_system_prompt}]
-    for m in request_data.messages:
-        messages.append({"role": m.role, "content": m.content})
+    
+    # Process image files from files_data
+    vision_images = []
+    if files_data:
+        for f in files_data:
+            extracted = f.get('extracted_text', '').strip()
+            if extracted.startswith('__VISION_IMG__'):
+                try:
+                    content_part, b64_part = extracted.split('||', 1)
+                    content_type = content_part.replace('__VISION_IMG__', '')
+                    b64 = b64_part.replace('__VISION_END__', '')
+                    vision_images.append(f"data:{content_type};base64,{b64}")
+                except Exception:
+                    pass
+
+    for i, m in enumerate(request_data.messages):
+        if i == len(request_data.messages) - 1 and m.role == "user" and vision_images:
+            content_list = [{"type": "text", "text": m.content}]
+            for img_url in vision_images:
+                content_list.append({
+                    "type": "image_url",
+                    "image_url": {"url": img_url}
+                })
+            messages.append({"role": m.role, "content": content_list})
+        else:
+            messages.append({"role": m.role, "content": m.content})
 
     invoke_url = f"{base_url.rstrip('/')}/chat/completions"
     headers = {
