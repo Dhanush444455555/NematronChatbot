@@ -370,7 +370,7 @@ async def generate_stream(request_data: ChatRequest, chat_id: str):
     if request_data.enable_thinking:
         extra_body = {
             "chat_template_kwargs": {"enable_thinking": True},
-            "reasoning_budget": request_data.reasoning_budget or 16384
+            "reasoning_budget": request_data.reasoning_budget if request_data.reasoning_budget else 32768
         }
 
     try:
@@ -382,10 +382,9 @@ async def generate_stream(request_data: ChatRequest, chat_id: str):
                 temperature=request_data.temperature if request_data.temperature is not None else 0.7,
                 top_p=request_data.top_p if request_data.top_p is not None else 0.95,
                 extra_body=extra_body if extra_body else None,
-                stream=True,
-                max_tokens=2048
+                stream=True
             ),
-            timeout=55
+            timeout=180
         )
 
         in_thinking = False

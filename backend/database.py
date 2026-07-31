@@ -156,7 +156,7 @@ async def create_chat(user_id: str, title: str = "New Chat") -> Dict[str, Any]:
 async def get_chats(user_id: str) -> List[Dict[str, Any]]:
     if _USE_MONGO:
         cur = chats_col.find({"user_id": user_id}).sort("updated_at", -1)
-        return [_fmt(c) for c in await cur.to_list(length=200)]
+        return [_fmt(c) for c in await cur.to_list(length=None)]
 
     with _get_db() as conn:
         cursor = conn.cursor()
@@ -277,7 +277,7 @@ async def get_messages(chat_id: str) -> List[Dict[str, Any]]:
         try:
             from bson import ObjectId
             cur = messages_col.find({"chat_id": ObjectId(chat_id)}).sort("timestamp", 1)
-            return [_fmt(m) for m in await cur.to_list(length=2000)]
+            return [_fmt(m) for m in await cur.to_list(length=None)]
         except Exception:
             return []
 
@@ -329,7 +329,7 @@ async def get_all_memories() -> List[Dict[str, Any]]:
     if _USE_MONGO:
         try:
             cur = memories_col.find().sort("timestamp", -1)
-            return [_fmt(m) for m in await cur.to_list(length=200)]
+            return [_fmt(m) for m in await cur.to_list(length=None)]
         except Exception:
             return []
 
@@ -482,7 +482,7 @@ async def get_all_users() -> List[Dict[str, Any]]:
     if _USE_MONGO:
         try:
             cur = users_col.find().sort("created_at", -1)
-            return [_fmt(u) for u in await cur.to_list(length=1000)]
+            return [_fmt(u) for u in await cur.to_list(length=None)]
         except Exception:
             return []
 
