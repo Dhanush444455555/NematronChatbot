@@ -265,6 +265,55 @@ function ChatApp({ authUser, onLogout }) {
     }, 400);
   };
 
+  const handleExportDOCX = () => {
+    if (!activeMessages || activeMessages.length === 0) return;
+    const title = activeChatTitle || 'Nematron_Chat';
+
+    const htmlDoc = `
+      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+      <head>
+        <meta charset='utf-8'>
+        <title>${title}</title>
+        <style>
+          body { font-family: 'Calibri', 'Arial', sans-serif; font-size: 11pt; line-height: 1.5; color: #1e293b; }
+          h1 { color: #4f46e5; font-size: 18pt; border-bottom: 2px solid #6366f1; padding-bottom: 6px; }
+          .meta { color: #64748b; font-size: 9.5pt; margin-bottom: 20px; }
+          .msg-box { margin-bottom: 16px; padding: 12px; border-radius: 6px; }
+          .user-box { background-color: #f1f5f9; border-left: 4px solid #2563eb; }
+          .assistant-box { background-color: #f8fafc; border-left: 4px solid #7c3aed; }
+          .role { font-weight: bold; font-size: 10pt; margin-bottom: 6px; }
+          .user-role { color: #2563eb; }
+          .assistant-role { color: #7c3aed; }
+          pre { background-color: #0f172a; color: #f8fafc; padding: 10px; font-family: 'Consolas', monospace; font-size: 9.5pt; }
+          code { font-family: 'Consolas', monospace; background-color: #e2e8f0; padding: 2px 4px; }
+        </style>
+      </head>
+      <body>
+        <h1>🤖 Nematron AI Conversation Document</h1>
+        <div class="meta">Title: <b>${title}</b> | Model: <b>${settings.model}</b> | Date: ${new Date().toLocaleString()}</div>
+        <hr/>
+        <br/>
+        ${activeMessages.map(m => `
+          <div class="msg-box ${m.role === 'user' ? 'user-box' : 'assistant-box'}">
+            <div class="role ${m.role === 'user' ? 'user-role' : 'assistant-role'}">
+              ${m.role === 'user' ? '👤 YOU' : '🤖 NEMATRON AI'}
+            </div>
+            <div>${m.content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br/>')}</div>
+          </div>
+        `).join('')}
+      </body>
+      </html>
+    `;
+
+    const blob = new Blob(['\ufeff' + htmlDoc], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_export.doc`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleExportMarkdown = () => {
     if (!activeMessages || activeMessages.length === 0) return;
     const title = activeChatTitle || 'Nematron_Chat';
@@ -458,6 +507,7 @@ function ChatApp({ authUser, onLogout }) {
           onNewChat={handleNewChat}
           onClearCurrentChat={handleClearCurrentChat}
           onExportPDF={handleExportPDF}
+          onExportDOCX={handleExportDOCX}
           onExportMarkdown={handleExportMarkdown}
           onExportTXT={handleExportTXT}
           hasMessages={activeMessages && activeMessages.length > 0}

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Sparkles, Trash2, Download, ShieldCheck, ShieldAlert, Menu, Plus, FileText, FileCode, ChevronDown, Printer } from 'lucide-react';
+import { Settings, Sparkles, Trash2, Download, ShieldCheck, ShieldAlert, Menu, Plus, FileText, FileCode, ChevronDown, Printer, File } from 'lucide-react';
 
 export default function Header({
   activeChatTitle,
@@ -10,6 +10,7 @@ export default function Header({
   onNewChat,
   onClearCurrentChat,
   onExportPDF,
+  onExportDOCX,
   onExportMarkdown,
   onExportTXT,
   hasMessages
@@ -93,7 +94,7 @@ export default function Header({
                   position: 'absolute',
                   top: 'calc(100% + 8px)',
                   right: 0,
-                  width: '190px',
+                  width: '210px',
                   background: 'var(--bg-secondary, #0f172a)',
                   border: '1px solid var(--border-color, rgba(255,255,255,0.12))',
                   borderRadius: 'var(--radius-md, 8px)',
@@ -132,6 +133,34 @@ export default function Header({
                 >
                   <Printer size={15} color="#38bdf8" />
                   <span>Export PDF</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowExportMenu(false);
+                    onExportDOCX && onExportDOCX();
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    width: '100%',
+                    padding: '8px 10px',
+                    border: 'none',
+                    background: 'transparent',
+                    color: '#e2e8f0',
+                    fontSize: '0.83rem',
+                    fontWeight: 500,
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'background 0.15s'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <File size={15} color="#60a5fa" />
+                  <span>Export Word Doc (.doc)</span>
                 </button>
 
                 <button
